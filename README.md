@@ -1,6 +1,6 @@
 # OASIS Local Simulation with Ollama (Llama 3.2)
 
-このプロジェクトは、マルチエージェント社会シミュレーションフレームワーク「OASIS」を、ローカルLLM環境（Ollama）で動作させるための実装です。
+このプロジェクトは、マルチエージェント社会シミュレーションフレームワーク「OASIS」を、ローカルLLM環境（Ollama）で動作させるためのものです。
 外部のAPIを使用せず、ローカルPC上で自律的なAIエージェントによるSNS（Reddit風）のシミュレーションを行います。
 
 ## 環境構成
@@ -10,7 +10,6 @@
 * **Package Manager**: `uv`
 * **LLM Backend**: Ollama
 * **Model**: Llama 3.2 (3B)
-    * *※当初予定していた Gemma 3 はツール機能(Function Calling)未対応のため、Llama 3.2 を採用しています。*
 
 ## 事前準備
 
@@ -67,6 +66,6 @@ python check_db.py
 - UnicodeDecodeError が出る場合
   - 実行前に必ず $env:PYTHONUTF8 = "1" を実行してください。
 
-## ライセンス / 出典
+## 権利 / 出典
 - OASIS: https://github.com/camel-ai/oasis
 - CAMEL-AI: https://www.camel-ai.org/
