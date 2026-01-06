@@ -59,12 +59,12 @@ python run_gemma_reddit.py
 python check_db.py
 ```
 ## トラブルシューティング
-- ValueError: ... does not support tools エラーが出る場合
+- `ValueError`: `... does not support tools` エラーが出る場合
   - スクリプト内のモデル指定が llama3.2 (または llama3.1) になっているか確認してください。Gemma 3 (Ollama版) は現在ツール機能に対応していません。
-- Async step timed out エラーが出る場合
-  - エージェント数が多すぎてPCの処理が追いついていません。run_gemma_reddit.py 内で生成される user_data_mini.json の人数（デフォルト5人）を減らしてみてください。
-- UnicodeDecodeError が出る場合
-  - 実行前に必ず $env:PYTHONUTF8 = "1" を実行してください。
+- `Async step timed out` エラーが出る場合
+  - エージェント数が多すぎてPCの処理が追いついていません。`run_gemma_reddit.py` 内で生成される `user_data_mini.json` の人数（デフォルト5人）を減らしてみてください。
+- `UnicodeDecodeError` が出る場合
+  - 実行前に必ず `$env:PYTHONUTF8 = "1"` を実行してください。
 
 ## 権利 / 出典
 - OASIS: https://github.com/camel-ai/oasis
