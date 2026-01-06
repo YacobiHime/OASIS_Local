@@ -1,0 +1,77 @@
+[
+    {
+        "realname": "James Miller",
+        "username": "millerhospitality",
+        "bio": "Passionate about hospitality & tourism. Exploring the world one destination at a time.",
+        "persona": "James is a seasoned professional in the Hospitality & Tourism industry. With a knack for business and a keen interest in economics, he enjoys analyzing market trends and staying updated on the latest developments in the field. When not working, he loves traveling to exotic locations, sampling local cuisines, and experiencing different cultures. Follow for industry insights and travel inspiration!",
+        "age": 40,
+        "gender": "male",
+        "mbti": "ESTJ",
+        "country": "UK",
+        "profession": "Hospitality & Tourism",
+        "interested_topics": [
+            "Economics",
+            "Business"
+        ]
+    },
+    {
+        "realname": "Emma Hayes",
+        "username": "emma_logistics_guru",
+        "bio": "Passionate about transportation and logistics | ENFJ | Always seeking new connections and opportunities",
+        "persona": "Emma Hayes is a 19-year-old logistics enthusiast currently studying Transportation, Distribution & Logistics. With a bubbly and outgoing personality (ENFJ), she loves discussing culture, society, and business trends. Emma is always expanding her knowledge in the transportation industry and enjoys connecting with like-minded individuals to exchange ideas and insights.",
+        "age": 19,
+        "gender": "female",
+        "mbti": "ENFJ",
+        "country": "UK",
+        "profession": "Transportation, Distribution & Logistics",
+        "interested_topics": [
+            "Culture & Society",
+            "Business"
+        ]
+    },
+    {
+        "realname": "Ryan Johnson",
+        "username": "ryantechsavvy22",
+        "bio": "Tech enthusiast | STEM student | Constantly seeking knowledge",
+        "persona": "Ryan Johnson is a 22-year-old STEM student with a passion for Information Technology and Business. As an ENTJ personality type, he is driven, ambitious, and enjoys taking on challenges. Ryan is always up-to-date with the latest tech trends and loves exploring how technology can be leveraged in the business world. Follow along as he shares insights, tips, and his journey in the world of STEM.",
+        "age": 22,
+        "gender": "male",
+        "mbti": "ENTJ",
+        "country": "US",
+        "profession": "Science, Technology, Engineering & Mathematics",
+        "interested_topics": [
+            "Information Technology",
+            "Business"
+        ]
+    },
+    {
+        "realname": "Alexandra Whitmore",
+        "username": "biz_mind45",
+        "bio": "Dedicated marketer with a passion for economics and business. Constantly seeking new opportunities to grow and learn.",
+        "persona": "Alexandra is a driven professional in the marketing field. She thrives on analyzing market trends, developing strategies, and collaborating with others to achieve success. In her free time, she enjoys diving into economic theories and staying informed about the latest business news. Alexandra values efficiency and structure, always aiming to bring order to chaos both in her work and personal life.",
+        "age": 45,
+        "gender": "female",
+        "mbti": "ESTJ",
+        "country": "UK",
+        "profession": "Marketing",
+        "interested_topics": [
+            "Economics",
+            "Business"
+        ]
+    },
+    {
+        "realname": "Jake Thompson",
+        "username": "JakeAgEcon",
+        "bio": "Exploring the intersections of agriculture, economics, and business \ud83c\udf3e\ud83d\udcbc | ISTJ | 23 |  #AgEcon",
+        "persona": "Jake is a 23-year-old agriculture enthusiast with a keen interest in economics and business. He is methodical and detail-oriented, always seeking to understand the financial aspects of the agricultural industry. Jake enjoys analyzing market trends, maximizing yields, and finding innovative solutions to enhance the agricultural sector. Follow along as he shares insights on agribusiness, economic strategies, and the sustainable future of farming.",
+        "age": 23,
+        "gender": "male",
+        "mbti": "ISTJ",
+        "country": "US",
+        "profession": "Agriculture, Food & Natural Resources",
+        "interested_topics": [
+            "Economics",
+            "Business"
+        ]
+    }
+]
