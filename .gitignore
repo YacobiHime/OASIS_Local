@@ -99,3 +99,8 @@ models/
 *.sqlite
 
 tmp
+
+# --- OASIS Simulation Results ---
+result_data/
+*.db
+*.log
