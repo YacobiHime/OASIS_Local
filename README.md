@@ -1,7 +1,7 @@
-# OASIS Local Simulation with Ollama (Llama 3.2)
+# OASIS Local Simulation with Ollama (Twitter/X)
 
 このプロジェクトは、マルチエージェント社会シミュレーションフレームワーク「OASIS」を、ローカルLLM環境（Ollama）で動作させるためのものです。
-外部のAPIを使用せず、ローカルPC上で自律的なAIエージェントによるSNS（Reddit風）のシミュレーションを行います。
+外部のAPIを使用せず、ローカルPC上で自律的なAIエージェントによるSNS（Twitter/X や Reddit）のシミュレーションを行います。
 
 ## 環境構成
 
@@ -19,6 +19,7 @@ PowerShellで以下のコマンドを実行し、モデルをダウンロード�
 
 ```powershell
 ollama pull llama3.2
+
 ```
 
 ### 2. Python環境のセットアップ (uv使用)
@@ -33,38 +34,74 @@ uv venv .venv --python 3.10
 # 依存関係のインストール
 uv pip install -e .
 uv pip install "camel-ai[all]"
+
 ```
 
 ## ファイル構成
-- `run_gemma_reddit.py`: シミュレーション実行用メインスクリプト。
-  -Llama 3.2 モデルを使用するように設定済み。
-  -動作軽量化のため、エージェント数を36人から5人に自動縮小する機能を含みます。
-- `check_db.py`: 実行結果（SQLiteデータベース）の中身を確認するためのスクリプト。
-- `data/local_reddit_gemma.db`: シミュレーション結果が保存されるデータベース（実行後に生成）。
+
+* **実行スクリプト**
+* `run_llama_twitter.py`: **Twitter (X) シミュレーション用**のメインスクリプト。
+* 日本語エージェントによる投稿・検索・リプライ等の自律行動を行います。
+* 絵文字を含む投稿に対応しています。
+
+
+* `run_gemma_reddit.py`: Redditシミュレーション用のスクリプト（旧バージョン）。
+
+
+* **ツール**
+* `check_db.py`: シミュレーション結果（SQLiteデータベース）の中身を確認・保存するスクリプト。
+* 実行結果を `result_data/` フォルダにテキストファイルとして自動保存します。
+
+
+
+
+* **データ・出力**
+* `data/local_twitter_simulation.db`: シミュレーション結果が保存されるデータベース。
+* `result_data/`: `check_db.py` で出力されたログファイルが保存されるフォルダ（Git管理対象外）。
+
+
 
 ## 実行方法
-### 1. シミュレーションの実行
+
+### 1. 文字コードの設定（重要）
+
+Twitterシミュレーションでは絵文字を使用するため、実行前に必ず以下のコマンドでUTF-8モードを有効にしてください。
+
 ```powershell
-# 文字コード設定 (UTF-8強制)
 $env:PYTHONUTF8 = "1"
 
-# シミュレーション開始
-python run_gemma_reddit.py
 ```
-実行すると、エージェント5人による投稿、検索、フォローなどの行動がシミュレーションされます。
 
-### 2. 結果の確認
-シミュレーション終了後、データベースに記録された行動ログを確認します。
+### 2. シミュレーションの実行
+
+以下のコマンドでシミュレーションを開始します。
+
+```powershell
+python run_llama_twitter.py
+
+```
+
+実行すると、エージェントたちが初期投稿に対して反応したり、自身の興味に基づいて新しい投稿を行ったりします。
+
+### 3. 結果の確認と保存
+
+シミュレーション終了後、以下のコマンドでデータベースの中身を確認できます。
+
 ```powershell
 python check_db.py
+
 ```
-## トラブルシューティング
-- `ValueError`: `... does not support tools` エラーが出る場合
-  - スクリプト内のモデル指定が llama3.2 (または llama3.1) になっているか確認してください。Gemma 3 (Ollama版) は現在ツール機能に対応していません。
-- `Async step timed out` エラーが出る場合
-  - エージェント数が多すぎてPCの処理が追いついていません。`run_gemma_reddit.py` 内で生成される `user_data_mini.json` の人数（デフォルト5人）を減らしてみてください。
-- `UnicodeDecodeError` が出る場合
-  - 実行前に必ず `$env:PYTHONUTF8 = "1"` を実行してください。
+
+* 画面に投稿内容とエージェントの行動ログが表示されます。
+* 同時に、`result_data/` フォルダ内に「日時付きのログファイル（例: `2026-01-21_12-00-00.txt`）」が自動保存されます。
+
+## Git管理について
+
+以下のファイル・フォルダは `.gitignore` によりGitの管理対象から除外されています。
+
+* `result_data/` (実験ログ)
+* `*.db` (データベースファイル)
+* `*.log` (ログファイル)
 
 ## 権利 / 出典
 - OASIS: https://github.com/camel-ai/oasis
