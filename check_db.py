@@ -9,7 +9,7 @@ from datetime import datetime
 # 文字化け対策
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-db_path = "./data/local_twitter_simulation.db"
+db_path = "./ollama_twitter.db"
 
 def show_and_save_results():
     output_dir = "result_data"
