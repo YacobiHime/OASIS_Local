@@ -125,6 +125,88 @@ class Platform:
             self.report_threshold,
         )
 
+        # ★★★ 新規追加: タイムラインを「テキスト」に変換する翻訳機 ★★★
+    def _format_timeline_to_text(self, posts: list) -> str:
+        if not posts:
+            return "（現在、タイムラインに表示できる投稿はありません）"
+
+        text_output = "【現在のタイムライン】\n"
+        
+        for post in posts:
+            # 1. ヘッダー情報（IDと投稿者）
+            # IDは後でツールで使うので明確に記述
+            text_output += f"▼ [Post ID: {post['post_id']}] 投稿者: User {post['user_id']}\n"
+            
+            # 2. 本文（ここを一番読んでほしい！）
+            text_output += f"内容: 「{post['content']}」\n"
+            
+            # 3. 付加情報（シンプルに）
+            text_output += f"(👍いいね: {post['num_likes']})\n"
+            
+            # 4. コメント欄（スレッド構造を分かりやすく）
+            if post.get('comments'):
+                text_output += "  ↳ [コメント欄]\n"
+                for comment in post['comments']:
+                    # コメントもUser IDと中身だけにする
+                    text_output += f"    - User {comment['user_id']}: {comment['content']}\n"
+            
+            # 区切り線
+            text_output += "-" * 40 + "\n"
+            
+        return text_output
+
+    async def refresh(self, agent_id: int):
+        # ... (前半のデータベース接続や、rec_sys呼び出し部分はそのまま) ...
+        # ... (self.recsys_type == RecsysType.REDDIT の分岐の手前あたりから修正) ...
+
+        # ★★★ 修正箇所: ここから下を書き換え ★★★
+        if self.recsys_type != RecsysType.REDDIT:
+            # 1. おすすめシステムから投稿IDのリストを取得
+            post_ids = self.rec_matrix[agent_id]
+            if not post_ids:
+                return {"posts": "（投稿はありません）"}
+
+            # 2. 投稿IDを使ってDBからデータを取得 (ここは元のロジックを活用)
+            # ※SQL部分は既存のコードに合わせてください。ここでは取得後の処理を変えます。
+            placeholders = ",".join("?" for _ in post_ids)
+            query_post_data = (
+                f"SELECT post_id, user_id, content, created_at, num_likes "
+                f"FROM post WHERE post_id IN ({placeholders}) "
+                f"ORDER BY created_at DESC" # 新しい順に並べる
+            )
+            
+            # DB実行 (既存のヘルパーメソッドを使用と仮定)
+            cursor = self.pl_utils.db.cursor()
+            cursor.execute(query_post_data, tuple(post_ids))
+            columns = [col[0] for col in cursor.description]
+            raw_posts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+            # 3. 各投稿についたコメントを取得してくっつける
+            posts_with_comments = []
+            for post in raw_posts:
+                # コメント取得SQL
+                query_comments = (
+                    "SELECT comment_id, user_id, content FROM comment "
+                    "WHERE post_id = ?"
+                )
+                cursor.execute(query_comments, (post['post_id'],))
+                comment_cols = [col[0] for col in cursor.description]
+                comments = [dict(zip(comment_cols, row)) for row in cursor.fetchall()]
+                
+                post['comments'] = comments
+                posts_with_comments.append(post)
+
+            # ★★★ 4. ここで「テキスト化」を実行！ ★★★
+            # 生のリスト(raw_posts)ではなく、整形済みのテキスト(formatted_text)を返す
+            formatted_text = self._format_timeline_to_text(posts_with_comments)
+
+            # AIにはこのキー "posts" の中身がただの文字列として渡される
+            return {"posts": formatted_text}
+
+        else:
+            # Reddit用の処理（今回は使わないので省略またはそのまま）
+            pass
+
     async def running(self):
         while True:
             message_id, data = await self.channel.receive_from()

@@ -44,7 +44,7 @@ async def main():
     # ---------------------------------------------------------
     ollama_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type="qwen3:4b-instruct-2507-q4_K_M",
+        model_type="qwen3:4b-instruct-2507-q8_0",
         url="http://localhost:11434/v1",
         api_key="ollama",
         model_config_dict={"temperature": 0.2},
