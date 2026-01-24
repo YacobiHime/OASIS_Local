@@ -31,42 +31,83 @@ class Environment(ABC):
 
 
 class SocialEnvironment(Environment):
-    followers_env_template = Template("I have $num_followers followers.")
-    follows_env_template = Template("I have $num_follows follows.")
+    # 日本語の自然な文章に変更
+    followers_env_template = Template("現在のフォロワー数は $num_followers 人です。")
+    follows_env_template = Template("現在 $num_follows 人をフォローしています。")
 
+    # 投稿リストのテンプレート（中身はget_posts_envで作るからシンプルに）
     posts_env_template = Template(
-        "After refreshing, you see some posts $posts")
+        "\n$posts")
 
+    # グループチャットの情報も日本語化
     groups_env_template = Template(
-        "And there are many group chat channels $all_groups\n"
-        "And You are already in some groups $joined_groups\n"
-        "You receive some messages from them $messages\n"
-        "You can join the groups you are interested, "
-        "leave the groups you already in, send messages to the group "
-        "you already in.\n"
-        "You must make sure you can only send messages to the group you "
-        "are already in")
+        "【グループチャット情報】\n"
+        "利用可能なグループチャンネル: $all_groups\n"
+        "現在参加しているグループ: $joined_groups\n"
+        "届いているメッセージ: $messages\n"
+        "（興味のあるグループに参加したり、メッセージを送ったりできますが、"
+        "メッセージ送信は参加済みのグループにしかできません。）")
+
+    # 全体の指示テンプレート
     env_template = Template(
+        "【現在の状況】\n"
+        "$followers_env\n"
+        "$follows_env\n"
         "$groups_env\n"
-        "$posts_env\npick one you want to perform action that best "
-        "reflects your current inclination based on your profile and "
-        "posts content. Do not limit your action in just `like` to like posts")
+        "$posts_env\n\n"
+        "【指示】\n"
+        "上記の状況を見て、あなたのプロフィールや性格、投稿内容に基づき、"
+        "最も適切と思われるアクションを1つ選んで実行してください。"
+        "単に「いいね（like）」するだけでなく、コメントや投稿など、能動的なアクションを検討してください。")
 
     def __init__(self, action: SocialAction):
         self.action = action
 
     async def get_posts_env(self) -> str:
         posts = await self.action.refresh()
-        # TODO: Replace posts json format string to other formats
+        
+        # ★ここが大改革ポイント！ JSONをパースして読みやすいテキストにするよ★
         if posts["success"]:
-            posts_env = json.dumps(posts["posts"], indent=4)
-            posts_env = self.posts_env_template.substitute(posts=posts_env)
+            formatted_posts = []
+            post_list = posts.get("posts", [])
+            
+            if not post_list:
+                return "【タイムライン】\n新しい投稿はありません。"
+
+            formatted_posts.append("【タイムライン】(最新の投稿一覧)")
+            formatted_posts.append("-" * 40)
+            
+            for post in post_list:
+                # 投稿の基本情報
+                post_id = post.get('post_id', '?')
+                user_name = post.get('user_name', 'Unknown')
+                content = post.get('content', '')
+                likes = post.get('num_likes', 0)
+                
+                post_str = (f"🆔PostID: {post_id}\n"
+                            f"👤Name: {user_name}\n"
+                            f"💬Content: {content}\n"
+                            f"❤️Likes: {likes}")
+                
+                # コメントがあれば追加
+                comments = post.get('comments', [])
+                if comments:
+                    post_str += "\n   👇[コメント]"
+                    for comment in comments:
+                        c_user = comment.get('user_name', 'Unknown')
+                        c_content = comment.get('content', '')
+                        post_str += f"\n   └ 👤{c_user}: {c_content}"
+                
+                formatted_posts.append(post_str)
+                formatted_posts.append("-" * 40)
+
+            posts_env = "\n".join(formatted_posts)
         else:
-            posts_env = "After refreshing, there are no existing posts."
+            posts_env = "【タイムライン】\n投稿の取得に失敗しました。"
+            
         return posts_env
 
     async def get_followers_env(self) -> str:
-        # TODO: Implement followers env
         agent_id = self.action.agent_id
         db_path = get_db_path()
         try:
@@ -83,7 +124,6 @@ class SocialEnvironment(Environment):
             {"num_followers": num_followers})
 
     async def get_follows_env(self) -> str:
-        # TODO: Implement follows env
         agent_id = self.action.agent_id
         try:
             db_path = get_db_path()
@@ -103,16 +143,19 @@ class SocialEnvironment(Environment):
     async def get_group_env(self) -> str:
         groups = await self.action.listen_from_group()
         if groups["success"]:
-            all_groups = json.dumps(groups["all_groups"])
-            joined_groups = json.dumps(groups["joined_groups"])
-            messages = json.dumps(groups["messages"])
+            # グループ情報も少し読みやすくするけど、データ構造が複雑ならJSONのままでも
+            # 文脈として「リスト」だと分かればOK。今回はシンプルにJSONダンプのままにするけど
+            # 必要ならここも整形してね！
+            all_groups = json.dumps(groups["all_groups"], ensure_ascii=False)
+            joined_groups = json.dumps(groups["joined_groups"], ensure_ascii=False)
+            messages = json.dumps(groups["messages"], ensure_ascii=False)
             groups_env = self.groups_env_template.substitute(
                 all_groups=all_groups,
                 joined_groups=joined_groups,
                 messages=messages,
             )
         else:
-            groups_env = "No groups."
+            groups_env = "グループチャットはありません。"
         return groups_env
 
     async def to_text_prompt(
@@ -122,9 +165,9 @@ class SocialEnvironment(Environment):
         include_follows: bool = True,
     ) -> str:
         followers_env = (await self.get_followers_env()
-                         if include_follows else "No followers.")
+                         if include_follows else "フォロワー情報なし")
         follows_env = (await self.get_follows_env()
-                       if include_followers else "No follows.")
+                       if include_followers else "フォロー情報なし")
         posts_env = await self.get_posts_env() if include_posts else ""
 
         return self.env_template.substitute(
