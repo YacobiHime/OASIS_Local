@@ -128,10 +128,11 @@ class SocialAgent(ChatAgent):
         user_msg = BaseMessage.make_user_message(
             role_name="User",
             content=(
-                f"Please perform social media actions after observing the "
-                f"platform environments. Notice that don't limit your "
-                f"actions for example to just like the posts. "
-                f"Here is your social media environment: {env_prompt}"))
+                f"プラットフォームの状況を観察し、ソーシャルメディア上のアクションを行ってください。"
+                f"「いいね」だけでなく、投稿やコメントなど、多様なアクションを積極的に行ってください。"
+                f"【重要】投稿内容やコメントは、必ず「日本語」で出力してください。"
+                f"英語は使用禁止です。(Output must be in Japanese only.)"
+                f"現在の環境情報: {env_prompt}"))
         try:
             agent_log.info(
                 f"Agent {self.social_agent_id} observing environment: "

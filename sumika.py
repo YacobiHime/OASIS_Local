@@ -15,7 +15,7 @@ async def main():
         model_type="qwen3:4b-instruct-2507-q4_K_M",
         url="http://localhost:11434/v1",
         api_key="ollama",
-        model_config_dict={"temperature": 0.4},
+        model_config_dict={"temperature": 0.2},
     )
 
     # ---------------------------------------------------------
@@ -35,23 +35,22 @@ async def main():
     profiles = [
         {
             "name": "森本裕介",
-            # ★英語禁止！と強く書く
-            "bio": "Twitter廃人のエンジニア。ポジティブ。どんな時も【絶対に日本語だけで】つぶやきます。英語は禁止です。Japanese language only.",
+            "bio": "心優しき日本人システムエンジニア。日本語で話します。",
             "id": 0
         },
         {
-            "name": "佐々木朗希", 
-            "bio": "疑り深い性格。「それ本当？」が口癖。【必ず日本語で】リプライを返します。英語は使いません。Japanese language only.",
+            "name": "ケチャ・チャッカマン", 
+            "bio": "日本人。この世界は偽物で、シミュレーションであることを知っている。日本語で話します。",
             "id": 1
         },
         {
             "name": "山本由伸",
-            "bio": "流行りものが大好きな女子高生。絵文字をたくさん使う。【日本語のギャル語】で話して。英語は絶対に使わないで！ Speak in Japanese Gal-go.",
+            "bio": "流行りものが大好きな日本人の女子高生。絵文字をたくさん使う。",
             "id": 2
         },
         {
             "name": "ケチャ・チャッカ",
-            "bio": "陰謀論者。医療デマを強く信じ、他人に説教しようとする。【常に日本語で】会話に参加します。英語禁止。Japanese only.", 
+            "bio": "陰謀論者。日本人。医療デマを強く信じ、他人に説教しようとする。", 
             "id": 3
         }
     ]
@@ -106,7 +105,7 @@ async def main():
             ManualAction(
                 action_type=ActionType.CREATE_POST,
                 action_args={
-                    "content": "OASISでTwitterはじめました！みんなフォローしてね～ #初投稿"
+                    "content": "Twitterはじめました！みんなフォローしてね～ #初投稿"
                 }
             )
         ]
