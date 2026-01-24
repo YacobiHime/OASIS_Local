@@ -26,15 +26,31 @@ class UserInfo:
             return self.to_reddit_system_message()
 
     def to_twitter_system_message(self) -> str:
-        # プロフィール構築
-        profile_str = self.description if self.description else "特になし"
+        # --- 変数の定義（ここが重要！） ---
         
-        # システムプロンプト本編
+        # 1. 基本のプロフィール（Bio）
+        profile_str = self.description if self.description else "特になし"
+
+        # 2. 詳細情報（tone_sectionなど）の準備
+        tone_section = ""
+        
+        # profile辞書がある場合、そこから情報を抽出
+        if self.profile and isinstance(self.profile, dict):
+            # 'other_info' キーがあるか確認して取得（なければ空辞書）
+            other_info = self.profile.get("other_info", {})
+            
+            # 口調データがあれば tone_section を作成
+            if "tone" in other_info and other_info["tone"]:
+                tone_section = f"\n# 口調・セリフ例\n以下の口調を参考にしてください:\n{other_info['tone']}"
+
+        # --- システムプロンプトの構築 ---
         system_content = f"""
 # 役割
 あなたはSNS「Twitter(X)」のユーザー「{self.name}」です。
 以下の設定になりきってください。
+--------------------------------------------------
 {profile_str}
+--------------------------------------------------
 {tone_section}
 
 # タスク
