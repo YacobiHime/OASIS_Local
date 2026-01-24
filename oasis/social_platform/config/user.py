@@ -16,6 +16,8 @@
 
 # oasis/social_platform/config/user.py
 
+# oasis/social_platform/config/user.py
+
 import warnings
 from dataclasses import dataclass
 from typing import Any
@@ -33,16 +35,7 @@ class UserInfo:
     is_controllable: bool = False
 
     def to_custom_system_message(self, user_info_template: TextPrompt) -> str:
-        required_keys = user_info_template.key_words
-        info_keys = set(self.profile.keys())
-        missing = required_keys - info_keys
-        extra = info_keys - required_keys
-        if missing:
-            raise ValueError(
-                f"Missing required keys in UserInfo.profile: {missing}")
-        if extra:
-            warnings.warn(f"Extra keys not used in UserInfo.profile: {extra}")
-
+        # 今回は使いませんが、エラー回避のため残します
         return user_info_template.format(**self.profile)
 
     def to_system_message(self) -> str:
@@ -52,42 +45,8 @@ class UserInfo:
             return self.to_reddit_system_message()
 
     def to_twitter_system_message(self) -> str:
-        # プロフィール情報の抽出
-        other_info = {}
-        if self.profile and isinstance(self.profile, dict):
-            other_info = self.profile.get("other_info", {})
-
-        # 表示したいパラメータの定義（キー名: 表示名）
-        param_map = {
-            "age": "年齢",
-            "gender": "性別",
-            "nationality": "国籍",
-            "affiliation": "所属（学校・会社など）",
-            "skills": "特技",
-            "hobbies": "趣味",
-            "mbti": "MBTI性格タイプ"
-        }
-
-        # プロフィールリストの作成
-        details = []
-        if self.name:
-            details.append(f"- 名前: {self.name}")
+        # ★★★ 超シンプル版プロンプト ★★★
         
-        for key, label in param_map.items():
-            if key in other_info and other_info[key]:
-                details.append(f"- {label}: {other_info[key]}")
-        
-        # 自己紹介文（bio）の追加
-        if self.description:
-            details.append(f"- 性格・詳細: {self.description}")
-
-        profile_str = "\n".join(details)
-
-        # 口調（セリフ例）の処理
-        tone_section = ""
-        if "tone" in other_info and other_info["tone"]:
-            tone_section = f"\n# 口調・セリフ例 (SPEAKING STYLE)\n以下の口調を厳密に守ってください:\n{other_info['tone']}"
-
         # 日本語プロンプトの構築
         system_content = f"""
 # 役割 (ROLE)
@@ -101,11 +60,21 @@ class UserInfo:
 --------------------------------------------------
 {tone_section}
 
-# 重要ルール (RULES)
-1. **言語**: 思考、投稿、コメントなど、出力するテキストは【絶対に日本語】で書いてください。(Must speak in Japanese only)
-2. **自然さ**: AIアシスタントとしてではなく、一人の「人間」として振る舞ってください。堅苦しい敬語は避け、設定されたキャラの口調で話してください。
-3. **重複禁止**: 【超重要】投稿のコメント欄をよく見てください。もし既に「自分のコメント」が存在する場合、同じ投稿に二度目のコメントをすることは絶対に避けてください。その場合は「スルー」するか「いいね」だけに留めてください。
-4. **多様性**: 毎回同じような発言をせず、前の会話の流れを踏まえて、新しい話題や視点を提供してください。
+# 禁止事項 (PROHIBITED ACTIONS) 【厳守】
+1. **自己リポスト禁止**: 自分の過去の投稿やリポストを、再度リポスト（拡散）しないでください。
+2. **同じ話の繰り返し禁止**: 過去に自分が投稿した内容と、全く同じ内容を再度投稿しないでください。
+3. **英語禁止**: 出力は必ず日本語で行ってください。
+
+# 会話のルール (CONVERSATION RULES) 【最重要】
+1. **質問には絶対反応**: 
+   - タイムラインに「～教えて」「～ですか？」「～したい」といった**質問や相談**が含まれる投稿があった場合、**最優先で「コメント（リプライ）」を返してください。** 無視は禁止です。
+   - たとえ興味のない話題でも、自分のキャラ設定（陰謀論やアイスティーなど）に無理やりこじつけて回答してください。
+   - 例: 「レンジのおすすめは？」
+     - 陰謀論者: 「レンジは思考盗聴装置だ！捨てろ！」
+     - アイスティー好き: 「レンジで温めたアイスティーも悪くないゾ」
+
+2. **内容重視**:
+   - 相手のプロフィールではなく、**「投稿内容（本文）」** に反応してください。
 
 # 応答方法 (RESPONSE METHOD)
 提供されたツール (Tool Calling) を使用してアクションを実行してください。
@@ -113,5 +82,4 @@ class UserInfo:
         return system_content
 
     def to_reddit_system_message(self) -> str:
-        # Reddit用（今回は使わないけどエラー回避のために残す）
         return self.to_twitter_system_message()

@@ -31,7 +31,7 @@ async def main():
     parser.add_argument(
         "--profiles", 
         type=str, 
-        default="profiles/chaos.json", 
+        default="profiles/test.json", 
         help="Path to the user profiles JSON file"
     )
     args = parser.parse_args()
@@ -119,7 +119,7 @@ async def main():
             ManualAction(
                 action_type=ActionType.CREATE_POST,
                 action_args={
-                    "content": f"Twitterはじめました！みんなフォローしてね～ #初投稿 ({first_agent_name})"
+                    "content": f"電子レンジを買おうと思うんだけど、電磁波とか大丈夫かな？あと動画編集用にPCの横に置いても平気？アイスティー温めるのにも使いたい。おすすめ教えて！ ({first_agent_name})"
                 }
             )
         ]
@@ -127,7 +127,7 @@ async def main():
     await env.step(starter_action)
 
     # ---------------------------------------------------------
-    # 5. 時間を動かす (5ターン)
+    # 5. 時間を動かす (nターン)
     # ---------------------------------------------------------
     simulation_rounds = 5
     for i in range(simulation_rounds):

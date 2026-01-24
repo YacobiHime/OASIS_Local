@@ -25,12 +25,13 @@ def pretty_print_json(text):
         return text
 
 def get_timeline_text(conn):
-    """投稿タイムラインのテキストを生成する（リポスト対応版）"""
-    text = "【📱 投稿タイムライン】\n"
+    """投稿とコメントをスレッド形式で生成する"""
+    text = "【📱 投稿タイムライン (スレッド表示)】\n"
     try:
-        # ★★★ SQL修正: 自己結合して、リポスト元の内容(original_content)を取得する ★★★
-        sql = """
+        # 1. 投稿(Post)を取得（リポスト情報含む）
+        sql_posts = """
         SELECT 
+            p1.post_id,
             p1.user_id, 
             p1.content, 
             p1.quote_content,
@@ -42,56 +43,69 @@ def get_timeline_text(conn):
         LEFT JOIN post p2 ON p1.original_post_id = p2.post_id
         ORDER BY p1.created_at
         """
-        
-        posts = pd.read_sql_query(sql, conn)
-        
+        posts = pd.read_sql_query(sql_posts, conn)
+
+        # 2. コメント(Comment)を取得
+        # テーブルが存在しない場合に備えて try-except
+        try:
+            sql_comments = "SELECT * FROM comment ORDER BY created_at"
+            comments = pd.read_sql_query(sql_comments, conn)
+        except Exception:
+            comments = pd.DataFrame()
+
         if posts.empty:
             text += "（投稿はまだありません）\n"
         else:
             for index, row in posts.iterrows():
-                text += "-" * 40 + "\n"
-                text += f"⏰ Time: {row['created_at']}\n"
+                post_id = row['post_id']
+                text += "-" * 60 + "\n"
+                text += f"⏰ Time: {row['created_at']} | 🆔 Post: {post_id}\n"
                 text += f"👤 User: {row['user_id']}\n"
                 
+                # --- 投稿内容の表示ロジック ---
                 content = row['content']
                 original_content = row['original_content']
                 quote_content = row['quote_content']
                 
-                # --- 表示ロジックの分岐 ---
-                
-                # パターン1: 引用リポスト (Quote Post)
-                # 引用コメント(quote_content)があり、元の投稿IDもある場合
-                # ※OASISの実装によっては、contentに元の投稿が入り、quote_contentにコメントが入る場合がある
                 if row['original_post_id'] and quote_content:
+                     # 引用リポスト
                      text += f"💬 {quote_content}\n"
                      text += f"   ↳ 🔁 QT @User{row['original_user_id']}: {content if content else original_content}\n"
-                
-                # パターン2: 通常の投稿 (Original Post)
-                # contentがあり、quote_contentがない場合
                 elif content and content.strip():
+                     # 通常投稿
                      text += f"💬 {content}\n"
-                
-                # パターン3: 純粋なリポスト (Repost)
-                # contentが空っぽだが、original_contentがある場合
                 elif original_content:
+                    # リポスト
                     text += f"🔁 [リポスト] @User{row['original_user_id']} の投稿を拡散しました\n"
                     text += f"   「{original_content}」\n"
-                
-                # パターン4: その他（本当に空っぽなど）
                 else:
                     text += "💬 (本文なし)\n"
+
+                # 3. この投稿についたコメントを表示 (Nested)
+                if not comments.empty:
+                    # この投稿(post_id)に紐づくコメントを抽出
+                    post_comments = comments[comments['post_id'] == post_id]
                     
-            text += "-" * 40 + "\n"
+                    if not post_comments.empty:
+                        text += "\n   👇 [コメント欄]\n"
+                        for c_idx, c_row in post_comments.iterrows():
+                            # コメントの「中身」と「誰が書いたか」を表示
+                            c_content = c_row.get('content', '')
+                            c_user = c_row.get('user_id', '?')
+                            c_time = c_row.get('created_at', '?')
+                            text += f"   ├─ ⏰{c_time} 👤User{c_user}: {c_content}\n"
+                
+            text += "-" * 60 + "\n"
     except Exception as e:
         text += f"タイムライン取得エラー: {e}\n"
     return text
 
 def get_action_log_text(conn):
-    """行動ログのテキストを生成する（最新20件に限定してコンテキストあふれ防止）"""
+    """行動ログのテキストを生成する（最新20件）"""
     text = "\n【🤖 エージェント行動ログ (最新20件)】\n"
     try:
         actions = pd.read_sql_query(f"SELECT * FROM trace ORDER BY rowid DESC LIMIT 20", conn)
-        actions = actions.iloc[::-1] # 時系列順に戻す
+        actions = actions.iloc[::-1]
 
         if actions.empty:
             text += "（行動ログはまだありません）\n"
@@ -110,7 +124,6 @@ def get_action_log_text(conn):
                 if info_content:
                     formatted_json = pretty_print_json(info_content)
                     text += "│ 📄 Info:\n"
-                    # インデントをつけて見やすく
                     for line in formatted_json.split('\n'):
                         text += f"│    {line}\n"
                 text += "└" + "─" * 40 + "\n"
@@ -122,7 +135,6 @@ def generate_summary(log_text):
     """LLMを使ってログを要約する"""
     print("🤖 AIがログを要約中... (Qwen3が考え中💭)")
     try:
-        # Ｐっち指定のモデル設定！
         ollama_model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
             model_type="qwen3:4b-instruct-2507-q4_K_M",
@@ -151,10 +163,8 @@ def generate_summary(log_text):
             "content": prompt
         }
         
-        # 実行！
         response = ollama_model.run([user_msg])
         
-        # レスポンスの取り出し処理
         if hasattr(response, 'choices') and len(response.choices) > 0:
             return response.choices[0].message.content
         elif hasattr(response, 'content'):
@@ -182,15 +192,12 @@ def show_and_save_results():
 
     conn = sqlite3.connect(db_path)
     
-    # 1. まずログのテキストを作る
     timeline_text = get_timeline_text(conn)
     action_text = get_action_log_text(conn)
     full_log_text = timeline_text + "\n" + action_text
     
-    # 2. それをLLMに投げて要約してもらう
     summary = generate_summary(full_log_text)
     
-    # 3. 全部くっつけて表示＆保存
     final_output = "\n" + "="*20 + " 【📝 AI要約レポート】 " + "="*20 + "\n"
     final_output += summary + "\n"
     final_output += "="*60 + "\n\n"
