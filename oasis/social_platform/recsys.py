@@ -702,7 +702,7 @@ def rec_sys_personalized_with_trace(
         current_user_id = idx  # 現在処理中のエージェントID
         
         if current_user_id >= len(user_table):
-             break
+            break
 
         user_bio = user_table[current_user_id]['bio']
 
@@ -710,7 +710,7 @@ def rec_sys_personalized_with_trace(
         available_post_contents = [
             (post['post_id'], post['content'])
             for post in candidate_posts
-            if post['user_id'] != current_user_id  # <--- 「自分以外の投稿」のみ許可！
+            if str(post['user_id']) != str(current_user_id) 
         ]
 
         # もし他人の投稿がなければ、空リストを入れて次へ
@@ -723,16 +723,16 @@ def rec_sys_personalized_with_trace(
         
         # embeddingモデルがない場合のランダム処理
         if model is None:
-             for post_id, _ in available_post_contents:
-                 post_scores.append((post_id, random.random()))
+            for post_id, _ in available_post_contents:
+                post_scores.append((post_id, random.random()))
         else:
-             # embeddingがある場合の類似度計算
-             user_embedding = model.encode(user_bio)
-             for post_id, post_content in available_post_contents:
-                 post_embedding = model.encode(post_content)
-                 # 簡易計算 (実際は元のコードのまま dot積などを計算してください)
-                 score = np.dot(user_embedding, post_embedding) 
-                 post_scores.append((post_id, score))
+            # embeddingがある場合の類似度計算
+            user_embedding = model.encode(user_bio)
+            for post_id, post_content in available_post_contents:
+                post_embedding = model.encode(post_content)
+                # 簡易計算 (実際は元のコードのまま dot積などを計算してください)
+                score = np.dot(user_embedding, post_embedding) 
+                post_scores.append((post_id, score))
 
         # スコア順にソートして上位を取得
         post_scores.sort(key=lambda x: x[1], reverse=True)

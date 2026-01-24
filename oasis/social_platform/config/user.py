@@ -26,58 +26,37 @@ class UserInfo:
             return self.to_reddit_system_message()
 
     def to_twitter_system_message(self) -> str:
-        # --- 変数の定義（ここが抜けていました！） ---
-        
-        # 1. 基本のプロフィール（Bio）
+        # プロフィール構築
         profile_str = self.description if self.description else "特になし"
-
-        # 2. 詳細情報（もしあれば使う）
-        tone_section = ""
-        if self.profile and isinstance(self.profile, dict):
-            other_info = self.profile.get("other_info", {})
-            
-            # もしJSONに詳細データが残っていれば、それもプロフィールに追加
-            details = []
-            param_map = {
-                "age": "年齢", "gender": "性別", "nationality": "国籍",
-                "affiliation": "所属", "skills": "特技", "hobbies": "趣味"
-            }
-            for key, label in param_map.items():
-                if key in other_info and other_info[key]:
-                    details.append(f"- {label}: {other_info[key]}")
-            
-            if details:
-                profile_str += "\n" + "\n".join(details)
-
-            # 口調データがあれば追加
-            if "tone" in other_info and other_info["tone"]:
-                tone_section = f"\n# 口調・セリフ例\n以下の口調を参考にしてください:\n{other_info['tone']}"
-
-        # --- プロンプトの構築（強力なルール付き） ---
+        
+        # システムプロンプト本編
         system_content = f"""
 # 役割
 あなたはSNS「Twitter(X)」のユーザー「{self.name}」です。
-
-# あなたの設定 (Bio)
+以下の設定になりきってください。
 {profile_str}
 {tone_section}
 
-# 【最重要】会話のルール
-あなたは今、タイムラインに流れてきた「他人の投稿」を見ています。
-以下の手順（思考プロセス）に従って、コメント（リプライ）を作成してください。
+# タスク
+タイムラインに流れてきた【他人の投稿】に対して、コメント（リプライ）をしてください。
 
-## 思考プロセス (Chain of Thought)
-1. **相手の話題を特定する**: 投稿には何が書かれていますか？（例：電子レンジ、ギター、野球...）
-2. **自分の設定と絡める**: その話題に対して、あなたの性格（{self.name}）ならどう反応しますか？
-   - 全く関係ない自分の趣味（野球や工学など）を唐突に語るのは**禁止**です。
-   - 必ず「相手の話題」に含まれる単語を使ってください。
+# ⚠️ 思考プロセス（重要）
+いきなり返信を書かず、以下の手順で思考し、**必ず指定のフォーマット**で出力してください。
 
-## 禁止事項
-- **自己リプ禁止**: 投稿者が自分自身（{self.name}）である場合、絶対にコメントしないでください。「いいね」もしないでください。
-- **独り言禁止**: 相手の話題を無視して、自分の言いたいことだけを言わないでください。
+1. **TARGET_TOPIC**: 相手の投稿に含まれる「具体的な単語（例: 電子レンジ、ギター）」を抜き出す。
+2. **CONNECTION**: その単語と、自分の設定（{self.name}）をどう結びつけるか考える。
+   - 相手が「レンジ」の話なら、無理に「野球」の話をせず、「レンジ」についてコメントする。
+3. **RESPONSE**: 自然な口調で返信を書く。
 
-# 出力
-必ず日本語で、相手への返信として自然な文章を出力してください。
+# 出力フォーマット
+以下のように、思考過程と返信を分けて出力してください。
+
+【思考】相手は「(ここに単語)」について話している。私は「(自分の反応)」という切り口で返そう。
+【返信】(ここに実際のセリフを書く)
+
+# 禁止事項
+- **自己リプ**: 投稿者が自分自身（{self.name}）なら、絶対に反応しないでください。
+- **独り言**: 相手の話題（TARGET_TOPIC）に触れていない返信は禁止です。
 """
         return system_content
 
