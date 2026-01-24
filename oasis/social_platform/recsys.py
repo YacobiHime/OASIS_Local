@@ -706,7 +706,6 @@ def rec_sys_personalized_with_trace(
 
         user_bio = user_table[current_user_id]['bio']
 
-        # ★★★ ここが修正の核心！ ★★★
         # 候補の中から「自分以外の投稿」だけを抽出するフィルターを追加
         available_post_contents = [
             (post['post_id'], post['content'])
