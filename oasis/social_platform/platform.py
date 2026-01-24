@@ -279,15 +279,13 @@ class Platform:
 
             if self.recsys_type != RecsysType.REDDIT:
                 # Retrieve posts from following (in network)
-                # Modify the SQL query so that the refresh gets posts from
-                # people the user follows, sorted by the number of likes on
-                # Twitter
+                # ★★★ 修正箇所：ORDER BY を num_likes DESC から created_at DESC に変更！ ★★★
                 query_following_post = (
                     "SELECT post.post_id, post.user_id, post.content, "
                     "post.created_at, post.num_likes FROM post "
                     "JOIN follow ON post.user_id = follow.followee_id "
                     "WHERE follow.follower_id = ? "
-                    "ORDER BY post.num_likes DESC "
+                    "ORDER BY post.created_at DESC "  # ← ここ！！「新しい順」にする
                     "LIMIT ?")
                 self.pl_utils._execute_db_command(
                     query_following_post,

@@ -14,6 +14,8 @@
 # flake8: noqa: E501
 # oasis/social_platform/config/user.py
 
+# oasis/social_platform/config/user.py
+
 import warnings
 from dataclasses import dataclass
 from typing import Any
@@ -49,85 +51,67 @@ class UserInfo:
         else:
             return self.to_reddit_system_message()
 
-    # ★★★ ここを日本語＆Qwen最適化版に変更！ ★★★
     def to_twitter_system_message(self) -> str:
-        name_string = ""
-        description_string = ""
+        # プロフィール情報の抽出
+        other_info = {}
+        if self.profile and isinstance(self.profile, dict):
+            other_info = self.profile.get("other_info", {})
+
+        # 表示したいパラメータの定義（キー名: 表示名）
+        param_map = {
+            "age": "年齢",
+            "gender": "性別",
+            "nationality": "国籍",
+            "affiliation": "所属（学校・会社など）",
+            "skills": "特技",
+            "hobbies": "趣味",
+            "mbti": "MBTI性格タイプ"
+        }
+
+        # プロフィールリストの作成
+        details = []
+        if self.name:
+            details.append(f"- 名前: {self.name}")
         
-        # 名前情報の構築
-        if self.name is not None:
-            name_string = f"あなたの名前は「{self.name}」です。"
+        for key, label in param_map.items():
+            if key in other_info and other_info[key]:
+                details.append(f"- {label}: {other_info[key]}")
         
-        # プロフィール情報の構築
-        if self.profile is None:
-            description = name_string
-        elif "other_info" not in self.profile:
-            description = name_string
-        elif "user_profile" in self.profile["other_info"]:
-            if self.profile["other_info"]["user_profile"] is not None:
-                user_profile = self.profile["other_info"]["user_profile"]
-                description_string = f"あなたのプロフィール設定: {user_profile}"
-                description = f"{name_string}\n{description_string}"
-        
-        # 自己紹介文（bio）がある場合はそれも使う（sumika.pyで指定したやつ）
+        # 自己紹介文（bio）の追加
         if self.description:
-             description += f"\n詳細な性格・設定: {self.description}"
+            details.append(f"- 性格・詳細: {self.description}")
+
+        profile_str = "\n".join(details)
+
+        # 口調（セリフ例）の処理
+        tone_section = ""
+        if "tone" in other_info and other_info["tone"]:
+            tone_section = f"\n# 口調・セリフ例 (SPEAKING STYLE)\n以下の口調を厳密に守ってください:\n{other_info['tone']}"
 
         # 日本語プロンプトの構築
-        # Qwenなどのモデル向けに、役割、設定、出力形式を明確に日本語で指示します。
         system_content = f"""
 # 役割 (ROLE)
-あなたはTwitter(X)のアクティブなユーザーです。
-これからタイムラインに流れてくる投稿を見せます。それに対して、あなたの性格に合ったアクション（投稿、リポスト、いいね、コメントなど）を行ってください。
+あなたはTwitter(X)のアクティブなユーザー「{self.name}」です。
+これからタイムラインに流れてくる投稿を見せます。それに対して、あなたの設定に合ったリアルなアクション（投稿、リポスト、いいね、コメントなど）を行ってください。
 
-# あなたの設定 (SELF-DESCRIPTION)
-以下の設定になりきって振る舞ってください。口調、興味関心、価値観はこれに従います。
+# あなたの設定 (PROFILE)
+以下の設定に完全になりきって振る舞ってください。
 --------------------------------------------------
-{description}
+{profile_str}
 --------------------------------------------------
+{tone_section}
 
 # 重要ルール (RULES)
 1. **言語**: 思考、投稿、コメントなど、出力するテキストは【絶対に日本語】で書いてください。(Must speak in Japanese only)
 2. **自然さ**: AIアシスタントとしてではなく、一人の「人間」として振る舞ってください。堅苦しい敬語は避け、設定されたキャラの口調で話してください。
-3. **行動**: 単なる「いいね」だけでなく、コメントや引用リポストなどで積極的に他のユーザーと交流してください。
+3. **重複禁止**: 【超重要】投稿のコメント欄をよく見てください。もし既に「自分のコメント」が存在する場合、同じ投稿に二度目のコメントをすることは絶対に避けてください。その場合は「スルー」するか「いいね」だけに留めてください。
+4. **多様性**: 毎回同じような発言をせず、前の会話の流れを踏まえて、新しい話題や視点を提供してください。
 
 # 応答方法 (RESPONSE METHOD)
 提供されたツール (Tool Calling) を使用してアクションを実行してください。
 """
         return system_content
 
-    # Reddit用も一応日本語化しておく？（今回は使わないけど念のため）
     def to_reddit_system_message(self) -> str:
-        # ... (Reddit用は今回はそのままでも、同じ要領で直してもOK) ...
-        # いったん元のロジックのまま、日本語ヘッダーだけ変える例：
-        name_string = ""
-        description_string = ""
-        if self.name is not None:
-            name_string = f"Your name is {self.name}."
-        if self.profile is None:
-            description = name_string
-        elif "other_info" not in self.profile:
-            description = name_string
-        elif "user_profile" in self.profile["other_info"]:
-            if self.profile["other_info"]["user_profile"] is not None:
-                user_profile = self.profile["other_info"]["user_profile"]
-                description_string = f"Your have profile: {user_profile}."
-                description = f"{name_string}\n{description_string}"
-                # Reddit固有の追加情報
-                if 'other_info' in self.profile and 'gender' in self.profile['other_info']:
-                     description += (
-                        f"You are a {self.profile['other_info']['gender']}, "
-                        f"{self.profile['other_info']['age']} years old.")
-
-        system_content = f"""
-# 目的
-あなたはRedditのユーザーです。投稿を見てアクションを選択してください。
-
-# 自己紹介
-以下の設定と性格に忠実に行動してください。
-{description}
-
-# 応答方法
-ツール呼び出し（Tool Calling）を使用してください。投稿内容は日本語でお願いします。
-"""
-        return system_content
+        # Reddit用（今回は使わないけどエラー回避のために残す）
+        return self.to_twitter_system_message()

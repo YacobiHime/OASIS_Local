@@ -679,6 +679,8 @@ def get_trace_contents(user_id, action, post_table, trace_table):
     return trace_contents
 
 
+# oasis/social_platform/recsys.py
+
 def rec_sys_personalized_with_trace(
     user_table: List[Dict[str, Any]],
     post_table: List[Dict[str, Any]],
@@ -688,52 +690,39 @@ def rec_sys_personalized_with_trace(
     swap_rate: float = 0.1,
 ) -> List[List]:
     """
-    This version:
-    1. If the number of posts is less than or equal to the maximum
-        recommended length, each user gets all post IDs
-
-    2. Otherwise:
-        - For each user, get a like-trace pool and dislike-trace pool from the
-            trace table
-        - For each user, calculate the similarity between the user's bio and
-            the post text
-        - Use the trace table to adjust the similarity score
-        - Swap 10% of the recommended posts with the random posts
-
-    Personalized recommendation system that uses user interaction traces.
-
-    Args:
-        user_table (List[Dict[str, Any]]): List of users.
-        post_table (List[Dict[str, Any]]): List of posts.
-        trace_table (List[Dict[str, Any]]): List of user interactions.
-        rec_matrix (List[List]): Existing recommendation matrix.
-        max_rec_post_len (int): Maximum number of recommended posts.
-        swap_rate (float): Percentage of posts to swap for diversity.
-
-    Returns:
-        List[List]: Updated recommendation matrix.
+    (Docstring略)
     """
 
     start_time = time.time()
 
+    # ★★★ 追加箇所：候補を「最新の30件」に絞る！ ★★★
+    # 古い話題を蒸し返さないように、リストの後ろ（最新）から30件だけを取得
+    candidate_posts = post_table[-30:] 
+    
     new_rec_matrix = []
-    post_ids = [post['post_id'] for post in post_table]
+    # 候補リストを使ってIDリストを作成
+    post_ids = [post['post_id'] for post in candidate_posts]
+    
     if len(post_ids) <= max_rec_post_len:
         new_rec_matrix = [post_ids] * (len(rec_matrix) - 1)
     else:
         for idx in range(1, len(rec_matrix)):
             user_id = user_table[idx - 1]['user_id']
             user_bio = user_table[idx - 1]['bio']
+            
+            # ★★★ 修正：ここも candidate_posts を使う ★★★
             # filter out posts that belong to the user
             available_post_contents = [(post['post_id'], post['content'])
-                                       for post in post_table
+                                       for post in candidate_posts  # ← post_table から変更
                                        if post['user_id'] != user_id]
 
             # filter out like-trace and dislike-trace
+            # ここは履歴参照なので post_table (全データ) のままでOK
             like_trace_contents = get_trace_contents(
                 user_id, ActionType.LIKE_POST.value, post_table, trace_table)
             dislike_trace_contents = get_trace_contents(
                 user_id, ActionType.UNLIKE_POST.value, post_table, trace_table)
+            
             # calculate similarity between user bio and post text
             post_scores = []
             for post_id, post_content in available_post_contents:
@@ -751,11 +740,16 @@ def rec_sys_personalized_with_trace(
             new_post_scores = []
             # adjust similarity based on like and dislike traces
             for _post_id, _base_similarity in post_scores:
-                _post_content = post_table[post_ids.index(_post_id)]['content']
+                # ★★★ 修正：IDからコンテンツを探すときも candidate_posts から探すのが効率的 ★★★
+                # (candidate_postsの中に絶対あるはずなので)
+                found_posts = [p for p in candidate_posts if p['post_id'] == _post_id]
+                if not found_posts: continue
+                _post_content = found_posts[0]['content']
+
                 like_similarity = sum(
                     np.dot(model.encode(_post_content), model.encode(like)) /
                     (np.linalg.norm(model.encode(_post_content)) *
-                     np.linalg.norm(model.encode(like)))
+                    np.linalg.norm(model.encode(like)))
                     for like in like_trace_contents) / len(
                         like_trace_contents) if like_trace_contents else 0
                 dislike_similarity = sum(
@@ -781,15 +775,18 @@ def rec_sys_personalized_with_trace(
 
             if swap_rate > 0:
                 # swap the recommended posts with random posts
+                # ★★★ 修正：スワップ候補も「最新の投稿」の中から選ぶ ★★★
                 swap_free_ids = [
-                    post_id for post_id in post_ids
+                    post_id for post_id in post_ids # post_ids は既に candidate_posts ベース
                     if post_id not in rec_post_ids and post_id not in [
                         trace['post_id']
                         for trace in trace_table if trace['user_id']
                     ]
                 ]
-                rec_post_ids = swap_random_posts(rec_post_ids, swap_free_ids,
-                                                 swap_rate)
+                # swap候補が足りない場合のエラー回避
+                if len(swap_free_ids) > 0:
+                    rec_post_ids = swap_random_posts(rec_post_ids, swap_free_ids,
+                                                    swap_rate)
 
             new_rec_matrix.append(rec_post_ids)
     end_time = time.time()
