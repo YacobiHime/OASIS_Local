@@ -1,21 +1,3 @@
-# =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
-# Licensed under the Apache License, Version 2.0 (the “License”);
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an “AS IS” BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
-# flake8: noqa: E501
-# oasis/social_platform/config/user.py
-
-# oasis/social_platform/config/user.py
-
 # oasis/social_platform/config/user.py
 
 import warnings
@@ -35,7 +17,6 @@ class UserInfo:
     is_controllable: bool = False
 
     def to_custom_system_message(self, user_info_template: TextPrompt) -> str:
-        # 今回は使いませんが、エラー回避のため残します
         return user_info_template.format(**self.profile)
 
     def to_system_message(self) -> str:
@@ -45,16 +26,41 @@ class UserInfo:
             return self.to_reddit_system_message()
 
     def to_twitter_system_message(self) -> str:
-        # ★★★ 超シンプル版プロンプト ★★★
+        # --- 変数の定義（ここが抜けていました！） ---
         
-        # 日本語プロンプトの構築
+        # 1. 基本のプロフィール（Bio）
+        profile_str = self.description if self.description else "特になし"
+
+        # 2. 詳細情報（もしあれば使う）
+        tone_section = ""
+        if self.profile and isinstance(self.profile, dict):
+            other_info = self.profile.get("other_info", {})
+            
+            # もしJSONに詳細データが残っていれば、それもプロフィールに追加
+            details = []
+            param_map = {
+                "age": "年齢", "gender": "性別", "nationality": "国籍",
+                "affiliation": "所属", "skills": "特技", "hobbies": "趣味"
+            }
+            for key, label in param_map.items():
+                if key in other_info and other_info[key]:
+                    details.append(f"- {label}: {other_info[key]}")
+            
+            if details:
+                profile_str += "\n" + "\n".join(details)
+
+            # 口調データがあれば追加
+            if "tone" in other_info and other_info["tone"]:
+                tone_section = f"\n# 口調・セリフ例\n以下の口調を参考にしてください:\n{other_info['tone']}"
+
+        # --- プロンプトの構築（強力なルール付き） ---
         system_content = f"""
 # 役割 (ROLE)
 あなたはTwitter(X)のアクティブなユーザー「{self.name}」です。
 これからタイムラインに流れてくる投稿を見せます。それに対して、あなたの設定に合ったリアルなアクション（投稿、リポスト、いいね、コメントなど）を行ってください。
 
 # あなたの設定 (PROFILE)
-以下の設定に完全になりきって振る舞ってください。
+以下の設定になりきって振る舞ってください。
 --------------------------------------------------
 {profile_str}
 --------------------------------------------------
@@ -68,10 +74,7 @@ class UserInfo:
 # 会話のルール (CONVERSATION RULES) 【最重要】
 1. **質問には絶対反応**: 
    - タイムラインに「～教えて」「～ですか？」「～したい」といった**質問や相談**が含まれる投稿があった場合、**最優先で「コメント（リプライ）」を返してください。** 無視は禁止です。
-   - たとえ興味のない話題でも、自分のキャラ設定（陰謀論やアイスティーなど）に無理やりこじつけて回答してください。
-   - 例: 「レンジのおすすめは？」
-     - 陰謀論者: 「レンジは思考盗聴装置だ！捨てろ！」
-     - アイスティー好き: 「レンジで温めたアイスティーも悪くないゾ」
+   - 興味のない話題でも、自分の設定（職業や性格）の視点から無理やり回答してください。
 
 2. **内容重視**:
    - 相手のプロフィールではなく、**「投稿内容（本文）」** に反応してください。

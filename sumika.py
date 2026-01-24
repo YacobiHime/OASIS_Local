@@ -119,7 +119,7 @@ async def main():
             ManualAction(
                 action_type=ActionType.CREATE_POST,
                 action_args={
-                    "content": f"電子レンジを買おうと思うんだけど、電磁波とか大丈夫かな？あと動画編集用にPCの横に置いても平気？アイスティー温めるのにも使いたい。おすすめ教えて！ ({first_agent_name})"
+                    "content": f"みなさんおはようございます。今日は電子レンジを購入しようと思います。おすすめを教えていただけると幸いです。 ({first_agent_name})"
                 }
             )
         ]
