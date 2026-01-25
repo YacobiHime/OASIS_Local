@@ -42,7 +42,7 @@ if "sphinx" not in sys.modules:
     if not agent_log.handlers:
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         file_handler = logging.FileHandler(
-            f"./log/social.agent-{str(now)}.log")
+            f"./log/social.agent-{str(now)}.log", encoding="utf-8")
         file_handler.setLevel("DEBUG")
         file_handler.setFormatter(
             logging.Formatter(
