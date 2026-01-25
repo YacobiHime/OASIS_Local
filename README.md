@@ -1,24 +1,28 @@
 # OASIS Local Simulation with Ollama (Twitter/X)
 
 このプロジェクトは、マルチエージェント社会シミュレーションフレームワーク「OASIS」を、ローカルLLM環境（Ollama）で動作させるためのものです。
-外部のAPIを使用せず、ローカルPC上で自律的なAIエージェントによるSNS（Twitter/X や Reddit）のシミュレーションを行います。
+外部のAPIを使用せず、ローカルPC上で自律的なAIエージェントによるSNS（Twitter/X）のシミュレーションを行います。
 
 ## 環境構成
 
-* **OS**: Windows (PowerShell)
+* **OS**: Windows (PowerShell) 推奨
 * **Python**: 3.10
 * **Package Manager**: `uv`
 * **LLM Backend**: Ollama
-* **Model**: Llama 3.2 (3B)
+* **Model**: `qwen3:4b-instruct-2507-q8_0` (デフォルト設定)
+* ※ `sumika.py` と `check_db.py` でこのモデル名が指定されています。環境に合わせてコード内のモデル名を変更しても動作します。
+
+
 
 ## 事前準備
 
 ### 1. Ollamaのインストールとモデルの準備
+
 Ollamaがインストールされ、起動している必要があります。
-PowerShellで以下のコマンドを実行し、モデルをダウンロードします。
+PowerShellで以下のコマンドを実行し、モデルをダウンロードします（またはコード内のモデル名を既存のモデルに変更してください）。
 
 ```powershell
-ollama pull llama3.2
+ollama pull qwen3:4b-instruct-2507-q8_0
 
 ```
 
@@ -40,24 +44,27 @@ uv pip install "camel-ai[all]"
 ## ファイル構成
 
 * **実行スクリプト**
-* `run_llama_twitter.py`: **Twitter (X) シミュレーション用**のメインスクリプト。
-* 日本語エージェントによる投稿・検索・リプライ等の自律行動を行います。
-* 絵文字を含む投稿に対応しています。
+* `sumika.py`: **Twitter (X) シミュレーション用**のメインスクリプト。
+* JSONプロファイルからエージェントを生成し、自律行動（投稿・リプライ・いいね・拡散など）を行います。
+* 引数でプロファイルファイルを指定可能です。
 
 
-* `run_gemma_reddit.py`: Redditシミュレーション用のスクリプト（旧バージョン）。
+* `run_llama_twitter.py`: 旧バージョンのシミュレーションスクリプト（Llama 3.2使用）。
 
 
 * **ツール**
 * `check_db.py`: シミュレーション結果（SQLiteデータベース）の中身を確認・保存するスクリプト。
-* 実行結果を `result_data/` フォルダにテキストファイルとして自動保存します。
+* タイムラインをスレッド形式で表示します。
+* LLMを使用して「何が起きたか」の要約レポートを自動生成します。
+* 実行結果を `result_data/` フォルダに自動保存します。
 
 
 
 
-* **データ・出力**
-* `data/local_twitter_simulation.db`: シミュレーション結果が保存されるデータベース。
-* `result_data/`: `check_db.py` で出力されたログファイルが保存されるフォルダ（Git管理対象外）。
+* **データ・設定**
+* `profiles/`: エージェントのプロファイルJSONを格納するフォルダ（例: `test.json`）。
+* `ollama_twitter.db`: シミュレーション結果が保存されるデータベース。
+* `result_data/`: `check_db.py` で出力されたログファイル保存先。
 
 
 
@@ -72,18 +79,22 @@ $env:PYTHONUTF8 = "1"
 
 ```
 
-### 2. シミュレーションの実行
+### 2. シミュレーションの実行 (`sumika.py`)
 
 以下のコマンドでシミュレーションを開始します。
 
 ```powershell
-python run_llama_twitter.py
+# デフォルト設定（profiles/test.json を使用）
+python sumika.py
+
+# プロファイルファイルを指定して実行する場合
+python sumika.py --profiles profiles/chaos.json
 
 ```
 
 実行すると、エージェントたちが初期投稿に対して反応したり、自身の興味に基づいて新しい投稿を行ったりします。
 
-### 3. 結果の確認と保存
+### 3. 結果の確認と保存 (`check_db.py`)
 
 シミュレーション終了後、以下のコマンドでデータベースの中身を確認できます。
 
@@ -92,8 +103,13 @@ python check_db.py
 
 ```
 
-* 画面に投稿内容とエージェントの行動ログが表示されます。
-* 同時に、`result_data/` フォルダ内に「日時付きのログファイル（例: `2026-01-21_12-00-00.txt`）」が自動保存されます。
+* **機能**:
+* タイムラインの表示（リプライや引用リポストもツリー状に表示）
+* エージェントの行動ログ表示
+* **AIによる状況要約**（「誰と誰が仲が良いか」「どんな話題が出たか」などをLLMが分析してコメントします）
+
+
+* `result_data/` フォルダ内に「日時付きのログファイル（例: `2026-01-25_12-00-00.txt`）」が自動保存されます。
 
 ## Git管理について
 
@@ -102,7 +118,9 @@ python check_db.py
 * `result_data/` (実験ログ)
 * `*.db` (データベースファイル)
 * `*.log` (ログファイル)
+* `.venv/` (仮想環境)
 
 ## 権利 / 出典
-- OASIS: https://github.com/camel-ai/oasis
-- CAMEL-AI: https://www.camel-ai.org/
+
+* OASIS: [https://github.com/camel-ai/oasis](https://github.com/camel-ai/oasis)
+* CAMEL-AI: [https://www.camel-ai.org/](https://www.camel-ai.org/)
