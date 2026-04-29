@@ -79,7 +79,7 @@ $env:PYTHONUTF8 = "1"
 python sumika.py
 
 # 設定ファイルを指定して実行する場合
-python sumika.py --profiles profiles/chaos.json
+python sumika.py --profiles profiles/test1.json
 ```
 
 実行すると、エージェントたちが初期の投稿に対して反応したり、自身の関心に基づいて新しい投稿を行ったりします。
