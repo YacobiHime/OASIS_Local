@@ -20,7 +20,7 @@ Ollamaが導入され、起動している必要があります。
 PowerShellで以下のコマンドを実行し、モデルを取得します（またはコード内のモデル名を既存のモデルに変更してください）。
 
 ```powershell
-ollama pull qwen3:4b-instruct-2507-q8_0
+ollama pull qwen3.5:4b
 ```
 
 ### 2. Python環境の構築
