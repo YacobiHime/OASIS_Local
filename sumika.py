@@ -27,11 +27,10 @@ async def main():
     # 0. コマンドライン引数の設定
     # ---------------------------------------------------------
     parser = argparse.ArgumentParser(description="OASIS Twitter Simulation")
-    # --profiles 引数でJSONファイルを指定（デフォルトは chaos.json にしておくね）
     parser.add_argument(
         "--profiles", 
         type=str, 
-        default="profiles/test.json", 
+        default="profiles/test1.json", 
         help="Path to the user profiles JSON file"
     )
     args = parser.parse_args()
@@ -110,7 +109,6 @@ async def main():
     print("🤖: Twitter（X）シミュレーション開始！")
 
     # 最初のきっかけ作り（ID:0 の住人に初投稿させる）
-    # ※JSONの0番目の人が「森本」さん以外でも動くように動的に取得
     first_agent = env.agent_graph.get_agent(0)
     first_agent_name = profiles[0]["name"]
     
