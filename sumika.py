@@ -42,11 +42,14 @@ async def main():
     # 1. モデル設定 
     # ---------------------------------------------------------
     ollama_model = ModelFactory.create(
-        model_platform=ModelPlatformType.OPENAI,
-        model_type="qwen3.5:4b",
-        url="http://localhost:11434/v1",
-        api_key="ollama",
-        model_config_dict={"temperature": 0.2},
+    model_platform=ModelPlatformType.OPENAI,
+    model_type="qwen3.5:4b",
+    url="http://localhost:11434/v1",
+    api_key="ollama",
+    model_config_dict={
+        "temperature": 0.2,
+        "presence_penalty": 1.5  # 過剰思考を抑制するための設定値。1.0 から 1.5 の間に設定。それでも長いなら最大値の2.0に設定。
+        },
     )
 
     # ---------------------------------------------------------
