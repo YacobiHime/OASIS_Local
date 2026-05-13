@@ -12,8 +12,8 @@ from camel.messages import BaseMessage
 # 文字化け対策
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-db_path = "./ollama_twitter.db"
-
+# db_path = "./ollama_twitter.db"
+db_path = "./vllm_twitter.db"
 def pretty_print_json(text):
     """JSON文字列を見やすく整形して返す"""
     if not isinstance(text, str):
@@ -137,7 +137,7 @@ def generate_summary(log_text):
     try:
         ollama_model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
-            model_type="qwen3:4b-instruct-2507-q8_0",
+            model_type="gemma4:e2b",
             url="http://localhost:11434/v1",
             api_key="ollama",
             model_config_dict={"temperature": 0.2},
