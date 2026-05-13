@@ -43,12 +43,12 @@ async def main():
     # ---------------------------------------------------------
     ollama_model = ModelFactory.create(
     model_platform=ModelPlatformType.OPENAI,
-    model_type="qwen3.5:4b",
+    model_type="gemma4:e2b",
     url="http://localhost:11434/v1",
     api_key="ollama",
     model_config_dict={
         "temperature": 0.2,
-        "presence_penalty": 1.5  # 過剰思考を抑制するための設定値。1.0 から 1.5 の間に設定。それでも長いなら最大値の2.0に設定。
+        "presence_penalty": 1.2  # 過剰思考を抑制するための設定値。1.0 から 1.5 の間に設定。それでも長いなら最大値の2.0に設定。
         },
     )
 
@@ -120,7 +120,7 @@ async def main():
             ManualAction(
                 action_type=ActionType.CREATE_POST,
                 action_args={
-                    "content": f"みなさんおはようございます。今日は電子レンジを購入しようと思います。おすすめを教えていただけると幸いです。 ({first_agent_name})"
+                    "content": f"にょっす🐮✋ ({first_agent_name})"
                 }
             )
         ]

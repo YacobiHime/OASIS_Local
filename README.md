@@ -9,7 +9,7 @@
 * **Python**: 3.10 または 3.11
 * **パッケージ管理**: pip (Python標準)
 * **LLMバックエンド**: Ollama
-* **モデル**: `qwen3:4b-instruct-2507-q8_0` (標準設定)
+* **モデル**: `qwen3:gemma4:e2b` (標準設定)
 * ※ `sumika.py` と `check_db.py` でこのモデル名が指定されています。環境に合わせてコード内のモデル名を変更しても動作します。
 
 ## 事前準備
@@ -20,7 +20,7 @@ Ollamaが導入され、起動している必要があります。
 PowerShellで以下のコマンドを実行し、モデルを取得します（またはコード内のモデル名を既存のモデルに変更してください）。
 
 ```powershell
-ollama pull qwen3.5:4b
+ollama pull gemma4:e2b
 ```
 
 ### 2. Python環境の構築
