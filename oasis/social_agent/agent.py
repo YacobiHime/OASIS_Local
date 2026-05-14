@@ -131,7 +131,6 @@ class SocialAgent(ChatAgent):
                 f"プラットフォームの状況を観察し、ソーシャルメディア上のアクションを行ってください。"
                 f"「いいね」だけでなく、投稿やコメントなど、多様なアクションを積極的に行ってください。"
                 f"【重要】投稿内容やコメントは、必ず「日本語」で出力してください。"
-                f"英語は使用禁止です。(Output must be in Japanese only.)"
                 f"現在の環境情報: {env_prompt}"))
         try:
             agent_log.info(

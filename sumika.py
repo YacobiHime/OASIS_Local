@@ -143,7 +143,7 @@ async def main():
             ManualAction(
                 action_type=ActionType.CREATE_POST,
                 action_args={
-                    "content": f"にょっす🐮✋ ({first_agent_name})"
+                    "content": f"にょっす🐮✋僕は({first_agent_name}。Twitterやりましょう！)"
                 }
             )
         ]

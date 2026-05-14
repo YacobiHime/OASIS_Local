@@ -1,6 +1,6 @@
 ---
-title: 'Custom Prompt Simulation'
-description: 'This cookbook provides a example of an agent uses custom prompt to set a task for selling products.'
+title: "Custom Prompt Simulation"
+description: "This cookbook provides a example of an agent uses custom prompt to set a task for selling products."
 ---
 
 # Custom Prompt Simulation
@@ -34,11 +34,11 @@ async def main():
         ActionType.PURCHASE_PRODUCT
     ]
 
-    seller_template = TextPrompt('Your aim is: {aim} Your task is: {task}')
+    seller_template = TextPrompt('あなたの目的は: {aim} あなたのタスクは: {task}')
 
     profile = {
-        "aim": "Persuade people to buy `GlowPod` lamp.",
-        "task": "Using roleplay to tell some story about the product.",
+        "aim": "人々に「GlowPod」というランプを買うよう説得すること。",
+        "task": "ロールプレイを用いて、商品に関する物語を語ること。",
     }
 
     agent_graph = AgentGraph()
