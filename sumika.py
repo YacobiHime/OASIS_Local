@@ -4,6 +4,7 @@ import json
 import argparse  # ★追加：引数処理用
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
+from camel.models import ModelManager
 
 import oasis
 from oasis import ActionType, LLMAction, ManualAction, AgentGraph, SocialAgent, UserInfo
@@ -41,16 +42,31 @@ async def main():
     # ---------------------------------------------------------
     # 1. モデル設定 
     # ---------------------------------------------------------
-    ollama_model = ModelFactory.create(
-    model_platform=ModelPlatformType.OPENAI,
-    model_type="gemma4:e2b",
-    url="http://localhost:11434/v1",
-    api_key="ollama",
-    model_config_dict={
-        "temperature": 0.2,
-        "presence_penalty": 1.2  # 過剰思考を抑制するための設定値。1.0 から 1.5 の間に設定。それでも長いなら最大値の2.0に設定。
-        },
+    
+    vllm_model = ModelFactory.create(
+        model_platform=ModelPlatformType.OPENAI,
+        model_type="gemma-4", 
+        url="http://192.168.15.150:8000/v1", 
+        api_key="sk-dummy" 
     )
+
+    shared_model_manager = ModelManager(
+        models=[vllm_model],
+        scheduling_strategy='round_robin',
+    )
+
+
+    # ollama_model = ModelFactory.create(
+    # model_platform=ModelPlatformType.OPENAI,
+    # model_type="gemma4:e2b",
+    # url="http://localhost:11434/v1",
+    # api_key="ollama",
+    # model_config_dict={
+    #     "temperature": 0.2,
+    #     "presence_penalty": 1.2  # 過剰思考を抑制するための設定値。1.0 から 1.5 の間に設定。それでも長いなら最大値の2.0に設定。
+    #     },
+    # )
+
 
     # ---------------------------------------------------------
     # 2. アクション設定
@@ -81,14 +97,21 @@ async def main():
             profile={"other_info": other_info},
             recsys_type="twitter", 
         )
-        
         agent = SocialAgent(
             agent_id=profile["id"],
             user_info=user_info,
             agent_graph=agent_graph,
-            model=ollama_model,
+            model=shared_model_manager,
             available_actions=available_actions,
-        )
+            )
+        
+        # agent = SocialAgent(
+        #     agent_id=profile["id"],
+        #     user_info=user_info,
+        #     agent_graph=agent_graph,
+        #     model=ollama_model,
+        #     available_actions=available_actions,
+        # )
         
         agent_graph.add_agent(agent)
         print(f"✨ {profile['name']} さんが入居しました！(ID: {profile['id']})")
@@ -96,7 +119,8 @@ async def main():
     # ---------------------------------------------------------
     # 4. 環境構築
     # ---------------------------------------------------------
-    db_path = "./ollama_twitter.db"
+    # db_path = "./ollama_twitter.db"
+    db_path = "./vllm_twitter.db"
     os.environ["OASIS_DB_PATH"] = os.path.abspath(db_path)
     
     if os.path.exists(db_path):
