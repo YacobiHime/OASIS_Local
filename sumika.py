@@ -44,16 +44,15 @@ async def main():
     # ---------------------------------------------------------
     
     vllm_model = ModelFactory.create(
-        model_platform=ModelPlatformType.OPENAI,
-        model_type="gemma-4", 
-        url="http://192.168.15.150:8000/v1", 
-        api_key="sk-dummy" 
+    model_platform=ModelPlatformType.VLLM,
+    model_type="google/gemma-4-E2B-it",  # Ubuntuで起動しているモデル名を正確に指定
+    url="http://192.168.15.150:8000/v1", # UbuntuサーバーのIPアドレスとポート
     )
-
+    # 複数のエージェントでこのモデルを共有するための設定
     shared_model_manager = ModelManager(
         models=[vllm_model],
         scheduling_strategy='round_robin',
-    )
+        )
 
 
     # ollama_model = ModelFactory.create(
@@ -101,7 +100,7 @@ async def main():
             agent_id=profile["id"],
             user_info=user_info,
             agent_graph=agent_graph,
-            model=shared_model_manager,
+            model=shared_model_manager,  # ← ここを vLLM のマネージャーに変更します
             available_actions=available_actions,
             )
         
