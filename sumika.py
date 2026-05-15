@@ -38,6 +38,17 @@ def init_tracker_db(db_path):
             num_likes     INTEGER DEFAULT 0
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS action_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            turn        INTEGER,
+            agent_id    INTEGER,
+            action_type TEXT,
+            target_id   INTEGER,
+            content     TEXT,
+            executed_at TEXT
+        )
+    """)
     conn.commit()
     return conn
 
@@ -228,9 +239,32 @@ async def main():
     simulation_rounds = 5
     for i in range(simulation_rounds):
         print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
-
         actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+
+        executed_at = datetime.now().isoformat()
         await env.step(actions)
+
+        cur = tracker_conn.cursor()
+        for _, agent in env.agent_graph.get_agents():
+            last_action = agent.last_action
+            if last_action is None:
+                continue
+            cur.execute(
+                """
+                INSERT INTO action_log
+                (turn, agent_id, action_type, target_id, content, executed_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    i + 1,
+                    agent.agent_id,
+                    str(last_action.action_type),
+                    getattr(last_action, "post_id", None),
+                    getattr(last_action, "content", None),
+                    executed_at,
+                ),
+            )
+        tracker_conn.commit()
 
     print("✅ シミュレーション終了！")
     await env.close()

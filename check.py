@@ -120,7 +120,7 @@ def get_action_log_text(conn):
     text = "\n【🤖 エージェント行動ログ (最新20件)】\n"
     try:
         actions = pd.read_sql_query(
-            f"SELECT * FROM trace ORDER BY rowid DESC LIMIT 20", conn
+            "SELECT * FROM trace ORDER BY id DESC LIMIT 20", conn
         )
         actions = actions.iloc[::-1]
 
@@ -130,7 +130,15 @@ def get_action_log_text(conn):
             for index, row in actions.iterrows():
                 text += "┌" + "─" * 40 + "\n"
                 text += f"│ ⏰ Time: {row['created_at']} | 👤 User: {row['user_id']}\n"
-                text += f"│ ⚡ Action: {row['action']}\n"
+
+                # 状態（status）を取得してアイコンを切り替え
+                status = row.get("status", "success")
+                status_icon = "✅" if status == "success" else "❌"
+                text += f"│ {status_icon} Action: {row['action']} (Status: {status})\n"
+
+                # エラー内容がある場合は表示
+                if row.get("error_message"):
+                    text += f"│ ⚠️ Error: {row['error_message']}\n"
 
                 info_content = ""
                 if "info" in row and row["info"]:
@@ -139,7 +147,8 @@ def get_action_log_text(conn):
                     info_content = row["action_params"]
 
                 if info_content:
-                    formatted_json = pretty_print_json(info_content)
+                    # ここで新しい関数を使用します
+                    formatted_json = format_info_json(info_content)
                     text += "│ 📄 Info:\n"
                     for line in formatted_json.split("\n"):
                         text += f"│    {line}\n"
