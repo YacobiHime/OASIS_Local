@@ -1,0 +1,29 @@
+[
+  {
+    "author_id": 1,
+    "content": "今日のランチ、めちゃくちゃ美味かった🍜",
+    "posted_at": "2025-01-01T08:32:11",
+    "num_likes": 14,
+    "num_reposts": 3,
+    "num_quotes": 1,
+    "num_impressions": 320,
+    "comments": [
+      {
+        "author_id": 2,
+        "content": "どこのお店ですか？😋",
+        "posted_at": "2025-01-01T08:45:00",
+        "num_likes": 2
+      }
+    ]
+  },
+  {
+    "author_id": 2,
+    "content": "最近AIの話題多すぎない？ちょっと疲れてきた笑",
+    "posted_at": "2025-01-01T09:10:44",
+    "num_likes": 8,
+    "num_reposts": 1,
+    "num_quotes": 0,
+    "num_impressions": 150,
+    "comments": []
+  }
+]

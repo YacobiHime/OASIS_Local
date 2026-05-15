@@ -12,8 +12,7 @@ from camel.messages import BaseMessage
 # 文字化け対策
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# db_path = "./ollama_twitter.db"
-db_path = "./vllm_twitter.db"
+db_path = "./ollama_twitter.db"
 def pretty_print_json(text):
     """JSON文字列を見やすく整形して返す"""
     if not isinstance(text, str):
@@ -135,12 +134,12 @@ def generate_summary(log_text):
     """LLMを使ってログを要約する"""
     print("🤖 AIがログを要約中... (Qwen3が考え中💭)")
     try:
-        vllm_model = ModelFactory.create(
+        ollama_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
         model_type="gemma4:e4b",
-        url="http://192.168.15.150:11434/v1",
-        api_key="ollama"
-    )
+        url="http://192.168.15.150:11434/v1",     # Ollamaのポート番号（11434）
+        api_key="ollama"                          # エラー回避用のダミーキー
+        )
 
         prompt = f"""
 あなたはSNSシミュレーションのログ分析官です。
