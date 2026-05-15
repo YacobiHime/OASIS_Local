@@ -34,9 +34,9 @@ async def main():
     # ---------------------------------------------------------
     model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type="gemma-4",
-        url="http://192.168.15.150:8000/v1",
-        api_key="sk-dummy"
+        model_type="gemma4:e4b",                  # ← ダウンロードしたGemmaのモデル名に合わせます
+        url="http://192.168.15.150:11434/v1",     # Ollamaのポート番号（11434）
+        api_key="ollama"                          # エラー回避用のダミーキー
     )
 
     # ---------------------------------------------------------

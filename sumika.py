@@ -44,9 +44,10 @@ async def main():
     # ---------------------------------------------------------
     
     vllm_model = ModelFactory.create(
-    model_platform=ModelPlatformType.VLLM,
-    model_type="google/gemma-4-E2B-it",  # Ubuntuで起動しているモデル名を正確に指定
-    url="http://192.168.15.150:8000/v1", # UbuntuサーバーのIPアドレスとポート
+        model_platform=ModelPlatformType.OPENAI,
+        model_type="gemma4:e4b",
+        url="http://192.168.15.150:11434/v1",     # Ollamaのポート番号（11434）
+        api_key="ollama"                          # エラー回避用のダミーキー
     )
     # 複数のエージェントでこのモデルを共有するための設定
     shared_model_manager = ModelManager(

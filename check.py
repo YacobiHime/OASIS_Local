@@ -135,13 +135,12 @@ def generate_summary(log_text):
     """LLMを使ってログを要約する"""
     print("🤖 AIがログを要約中... (Qwen3が考え中💭)")
     try:
-        ollama_model = ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
-            model_type="gemma4:e2b",
-            url="http://localhost:11434/v1",
-            api_key="ollama",
-            model_config_dict={"temperature": 0.2},
-        )
+        vllm_model = ModelFactory.create(
+        model_platform=ModelPlatformType.OPENAI,
+        model_type="gemma4:e4b",
+        url="http://192.168.15.150:11434/v1",
+        api_key="ollama"
+    )
 
         prompt = f"""
 あなたはSNSシミュレーションのログ分析官です。
