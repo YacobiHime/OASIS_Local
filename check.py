@@ -10,18 +10,33 @@ from camel.types import ModelPlatformType
 from camel.messages import BaseMessage
 
 # 文字化け対策
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
 
 db_path = "./ollama_twitter.db"
-def pretty_print_json(text):
-    """JSON文字列を見やすく整形して返す"""
+
+
+def format_info_json(text):
+    """JSON文字列から不要な情報を省き、見やすく整形して返す"""
     if not isinstance(text, str):
         return str(text)
     try:
         data = json.loads(text)
+        if isinstance(data, dict):
+            # 表示したくない不要な項目を除外（例としてpromptなどを指定）
+            keys_to_remove = ["prompt", "embeddings", "raw_response"]
+            for k in keys_to_remove:
+                data.pop(k, None)
+
+            # 文字列が長すぎる場合は切り詰める（100文字で省略）
+            for k, v in data.items():
+                if isinstance(v, str) and len(v) > 100:
+                    data[k] = v[:100] + "...(省略)"
+
         return json.dumps(data, indent=2, ensure_ascii=False)
     except:
         return text
+
 
 def get_timeline_text(conn):
     """投稿とコメントをスレッド形式で生成する"""
@@ -56,23 +71,23 @@ def get_timeline_text(conn):
             text += "（投稿はまだありません）\n"
         else:
             for index, row in posts.iterrows():
-                post_id = row['post_id']
+                post_id = row["post_id"]
                 text += "-" * 60 + "\n"
                 text += f"⏰ Time: {row['created_at']} | 🆔 Post: {post_id}\n"
                 text += f"👤 User: {row['user_id']}\n"
-                
+
                 # --- 投稿内容の表示ロジック ---
-                content = row['content']
-                original_content = row['original_content']
-                quote_content = row['quote_content']
-                
-                if row['original_post_id'] and quote_content:
-                     # 引用リポスト
-                     text += f"💬 {quote_content}\n"
-                     text += f"   ↳ 🔁 QT @User{row['original_user_id']}: {content if content else original_content}\n"
+                content = row["content"]
+                original_content = row["original_content"]
+                quote_content = row["quote_content"]
+
+                if row["original_post_id"] and quote_content:
+                    # 引用リポスト
+                    text += f"💬 {quote_content}\n"
+                    text += f"   ↳ 🔁 QT @User{row['original_user_id']}: {content if content else original_content}\n"
                 elif content and content.strip():
-                     # 通常投稿
-                     text += f"💬 {content}\n"
+                    # 通常投稿
+                    text += f"💬 {content}\n"
                 elif original_content:
                     # リポスト
                     text += f"🔁 [リポスト] @User{row['original_user_id']} の投稿を拡散しました\n"
@@ -83,27 +98,30 @@ def get_timeline_text(conn):
                 # 3. この投稿についたコメントを表示 (Nested)
                 if not comments.empty:
                     # この投稿(post_id)に紐づくコメントを抽出
-                    post_comments = comments[comments['post_id'] == post_id]
-                    
+                    post_comments = comments[comments["post_id"] == post_id]
+
                     if not post_comments.empty:
                         text += "\n   👇 [コメント欄]\n"
                         for c_idx, c_row in post_comments.iterrows():
                             # コメントの「中身」と「誰が書いたか」を表示
-                            c_content = c_row.get('content', '')
-                            c_user = c_row.get('user_id', '?')
-                            c_time = c_row.get('created_at', '?')
+                            c_content = c_row.get("content", "")
+                            c_user = c_row.get("user_id", "?")
+                            c_time = c_row.get("created_at", "?")
                             text += f"   ├─ ⏰{c_time} 👤User{c_user}: {c_content}\n"
-                
+
             text += "-" * 60 + "\n"
     except Exception as e:
         text += f"タイムライン取得エラー: {e}\n"
     return text
 
+
 def get_action_log_text(conn):
     """行動ログのテキストを生成する（最新20件）"""
     text = "\n【🤖 エージェント行動ログ (最新20件)】\n"
     try:
-        actions = pd.read_sql_query(f"SELECT * FROM trace ORDER BY rowid DESC LIMIT 20", conn)
+        actions = pd.read_sql_query(
+            f"SELECT * FROM trace ORDER BY rowid DESC LIMIT 20", conn
+        )
         actions = actions.iloc[::-1]
 
         if actions.empty:
@@ -113,32 +131,33 @@ def get_action_log_text(conn):
                 text += "┌" + "─" * 40 + "\n"
                 text += f"│ ⏰ Time: {row['created_at']} | 👤 User: {row['user_id']}\n"
                 text += f"│ ⚡ Action: {row['action']}\n"
-                
+
                 info_content = ""
-                if 'info' in row and row['info']:
-                    info_content = row['info']
-                elif 'action_params' in row and row['action_params']:
-                    info_content = row['action_params']
-                
+                if "info" in row and row["info"]:
+                    info_content = row["info"]
+                elif "action_params" in row and row["action_params"]:
+                    info_content = row["action_params"]
+
                 if info_content:
                     formatted_json = pretty_print_json(info_content)
                     text += "│ 📄 Info:\n"
-                    for line in formatted_json.split('\n'):
+                    for line in formatted_json.split("\n"):
                         text += f"│    {line}\n"
                 text += "└" + "─" * 40 + "\n"
     except Exception as e:
         text += f"行動ログ取得エラー: {e}\n"
     return text
 
+
 def generate_summary(log_text):
     """LLMを使ってログを要約する"""
     print("🤖 AIがログを要約中... (Qwen3が考え中💭)")
     try:
         ollama_model = ModelFactory.create(
-        model_platform=ModelPlatformType.OPENAI,
-        model_type="gemma4:e4b",
-        url="http://192.168.15.150:11434/v1",     # Ollamaのポート番号（11434）
-        api_key="ollama"                          # エラー回避用のダミーキー
+            model_platform=ModelPlatformType.OPENAI,
+            model_type="gemma4:e4b",
+            url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
+            api_key="ollama",  # エラー回避用のダミーキー
         )
 
         prompt = f"""
@@ -156,58 +175,57 @@ def generate_summary(log_text):
 
 出力は日本語で、箇条書きを使って簡潔にまとめてください。
 """
-        user_msg = {
-            "role": "user",
-            "content": prompt
-        }
-        
+        user_msg = {"role": "user", "content": prompt}
+
         response = ollama_model.run([user_msg])
-        
-        if hasattr(response, 'choices') and len(response.choices) > 0:
+
+        if hasattr(response, "choices") and len(response.choices) > 0:
             return response.choices[0].message.content
-        elif hasattr(response, 'content'):
+        elif hasattr(response, "content"):
             return response.content
-        elif isinstance(response, dict) and 'choices' in response:
-            return response['choices'][0]['message']['content']
+        elif isinstance(response, dict) and "choices" in response:
+            return response["choices"][0]["message"]["content"]
         else:
             return str(response)
 
     except Exception as e:
         return f"⚠️ 要約の生成に失敗しました: {e}"
 
+
 def show_and_save_results():
     output_dir = "result_data"
     os.makedirs(output_dir, exist_ok=True)
-    
+
     now = datetime.now()
     file_name = now.strftime("%Y-%m-%d_%H-%M-%S.txt")
     output_path = os.path.join(output_dir, file_name)
-    
+
     print("--------------------------------------------------")
     print(f"ファイル名を自動生成しました: {file_name}")
     print("--------------------------------------------------")
     print(f"--- 接続先DB: {db_path} ---")
 
     conn = sqlite3.connect(db_path)
-    
+
     timeline_text = get_timeline_text(conn)
     action_text = get_action_log_text(conn)
     full_log_text = timeline_text + "\n" + action_text
-    
+
     summary = generate_summary(full_log_text)
-    
-    final_output = "\n" + "="*20 + " 【📝 AI要約レポート】 " + "="*20 + "\n"
+
+    final_output = "\n" + "=" * 20 + " 【📝 AI要約レポート】 " + "=" * 20 + "\n"
     final_output += summary + "\n"
-    final_output += "="*60 + "\n\n"
+    final_output += "=" * 60 + "\n\n"
     final_output += full_log_text
-    
+
     print(final_output)
-    
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_output)
-        
+
     print(f"\n✅ 保存しました: {output_path}")
     conn.close()
+
 
 if __name__ == "__main__":
     show_and_save_results()
