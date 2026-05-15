@@ -97,98 +97,97 @@ def create_db(db_path: str | None = None):
     try:
         # Read and execute the user table SQL script:
         user_sql_path = osp.join(schema_dir, USER_SCHEMA_SQL)
-        with open(user_sql_path, "r") as sql_file:
+        with open(user_sql_path, "r", encoding="utf-8") as sql_file:
             user_sql_script = sql_file.read()
         cursor.executescript(user_sql_script)
 
         # Read and execute the post table SQL script:
         post_sql_path = osp.join(schema_dir, POST_SCHEMA_SQL)
-        with open(post_sql_path, "r") as sql_file:
+        with open(post_sql_path, "r", encoding="utf-8") as sql_file:
             post_sql_script = sql_file.read()
         cursor.executescript(post_sql_script)
 
         # Read and execute the follow table SQL script:
         follow_sql_path = osp.join(schema_dir, FOLLOW_SCHEMA_SQL)
-        with open(follow_sql_path, "r") as sql_file:
+        with open(follow_sql_path, "r", encoding="utf-8") as sql_file:
             follow_sql_script = sql_file.read()
         cursor.executescript(follow_sql_script)
 
         # Read and execute the mute table SQL script:
         mute_sql_path = osp.join(schema_dir, MUTE_SCHEMA_SQL)
-        with open(mute_sql_path, "r") as sql_file:
+        with open(mute_sql_path, "r", encoding="utf-8") as sql_file:
             mute_sql_script = sql_file.read()
         cursor.executescript(mute_sql_script)
 
         # Read and execute the like table SQL script:
         like_sql_path = osp.join(schema_dir, LIKE_SCHEMA_SQL)
-        with open(like_sql_path, "r") as sql_file:
+        with open(like_sql_path, "r", encoding="utf-8") as sql_file:
             like_sql_script = sql_file.read()
         cursor.executescript(like_sql_script)
 
         # Read and execute the dislike table SQL script:
         dislike_sql_path = osp.join(schema_dir, DISLIKE_SCHEMA_SQL)
-        with open(dislike_sql_path, "r") as sql_file:
+        with open(dislike_sql_path, "r", encoding="utf-8") as sql_file:
             dislike_sql_script = sql_file.read()
         cursor.executescript(dislike_sql_script)
 
         # Read and execute the report table SQL script:
         report_sql_path = osp.join(schema_dir, REPORT_SCHEAM_SQL)
-        with open(report_sql_path, "r") as sql_file:
+        with open(report_sql_path, "r", encoding="utf-8") as sql_file:
             report_sql_script = sql_file.read()
         cursor.executescript(report_sql_script)
 
         # Read and execute the trace table SQL script:
         trace_sql_path = osp.join(schema_dir, TRACE_SCHEMA_SQL)
-        with open(trace_sql_path, "r") as sql_file:
+        with open(trace_sql_path, "r", encoding="utf-8") as sql_file:
             trace_sql_script = sql_file.read()
         cursor.executescript(trace_sql_script)
 
         # Read and execute the rec table SQL script:
         rec_sql_path = osp.join(schema_dir, REC_SCHEMA_SQL)
-        with open(rec_sql_path, "r") as sql_file:
+        with open(rec_sql_path, "r", encoding="utf-8") as sql_file:
             rec_sql_script = sql_file.read()
         cursor.executescript(rec_sql_script)
 
         # Read and execute the comment table SQL script:
         comment_sql_path = osp.join(schema_dir, COMMENT_SCHEMA_SQL)
-        with open(comment_sql_path, "r") as sql_file:
+        with open(comment_sql_path, "r", encoding="utf-8") as sql_file:
             comment_sql_script = sql_file.read()
         cursor.executescript(comment_sql_script)
 
         # Read and execute the comment_like table SQL script:
         comment_like_sql_path = osp.join(schema_dir, COMMENT_LIKE_SCHEMA_SQL)
-        with open(comment_like_sql_path, "r") as sql_file:
+        with open(comment_like_sql_path, "r", encoding="utf-8") as sql_file:
             comment_like_sql_script = sql_file.read()
         cursor.executescript(comment_like_sql_script)
 
         # Read and execute the comment_dislike table SQL script:
-        comment_dislike_sql_path = osp.join(schema_dir,
-                                            COMMENT_DISLIKE_SCHEMA_SQL)
-        with open(comment_dislike_sql_path, "r") as sql_file:
+        comment_dislike_sql_path = osp.join(schema_dir, COMMENT_DISLIKE_SCHEMA_SQL)
+        with open(comment_dislike_sql_path, "r", encoding="utf-8") as sql_file:
             comment_dislike_sql_script = sql_file.read()
         cursor.executescript(comment_dislike_sql_script)
 
         # Read and execute the product table SQL script:
         product_sql_path = osp.join(schema_dir, PRODUCT_SCHEMA_SQL)
-        with open(product_sql_path, "r") as sql_file:
+        with open(product_sql_path, "r", encoding="utf-8") as sql_file:
             product_sql_script = sql_file.read()
         cursor.executescript(product_sql_script)
 
         # Read and execute the group table SQL script:
         group_sql_path = osp.join(schema_dir, GROUP_SCHEMA_SQL)
-        with open(group_sql_path, "r") as sql_file:
+        with open(group_sql_path, "r", encoding="utf-8") as sql_file:
             group_sql_script = sql_file.read()
         cursor.executescript(group_sql_script)
 
         # Read and execute the group_member table SQL script:
         group_member_sql_path = osp.join(schema_dir, GROUP_MEMBER_SCHEMA_SQL)
-        with open(group_member_sql_path, "r") as sql_file:
+        with open(group_member_sql_path, "r", encoding="utf-8") as sql_file:
             group_member_sql_script = sql_file.read()
         cursor.executescript(group_member_sql_script)
 
         # Read and execute the group_message table SQL script:
         group_message_sql_path = osp.join(schema_dir, GROUP_MESSAGE_SCHEMA_SQL)
-        with open(group_message_sql_path, "r") as sql_file:
+        with open(group_message_sql_path, "r", encoding="utf-8") as sql_file:
             group_message_sql_script = sql_file.read()
         cursor.executescript(group_message_sql_script)
 
@@ -230,8 +229,10 @@ def print_db_tables_summary():
         if foreign_keys:
             print("- Foreign Keys:")
             for fk in foreign_keys:
-                print(f"    {fk[2]} references {fk[3]}({fk[4]}) on update "
-                      f"{fk[5]} on delete {fk[6]}")
+                print(
+                    f"    {fk[2]} references {fk[3]}({fk[4]}) on update "
+                    f"{fk[5]} on delete {fk[6]}"
+                )
         else:
             print("  No foreign keys.")
 
@@ -246,8 +247,9 @@ def print_db_tables_summary():
     conn.close()
 
 
-def fetch_table_from_db(cursor: sqlite3.Cursor,
-                        table_name: str) -> List[Dict[str, Any]]:
+def fetch_table_from_db(
+    cursor: sqlite3.Cursor, table_name: str
+) -> List[Dict[str, Any]]:
     cursor.execute(f"SELECT * FROM {table_name}")
     columns = [description[0] for description in cursor.description]
     data_dicts = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -261,8 +263,7 @@ def fetch_rec_table_as_matrix(cursor: sqlite3.Cursor) -> List[List[int]]:
     user_ids = [row[0] for row in cursor.fetchall()]
 
     # Then, query all records from the rec table
-    cursor.execute(
-        "SELECT user_id, post_id FROM rec ORDER BY user_id, post_id")
+    cursor.execute("SELECT user_id, post_id FROM rec ORDER BY user_id, post_id")
     rec_rows = cursor.fetchall()
     # Initialize a dictionary, assigning an empty list to each user_id
     user_posts = {user_id: [] for user_id in user_ids}
@@ -275,15 +276,17 @@ def fetch_rec_table_as_matrix(cursor: sqlite3.Cursor) -> List[List[int]]:
     return matrix
 
 
-def insert_matrix_into_rec_table(cursor: sqlite3.Cursor,
-                                 matrix: List[List[int]]) -> None:
+def insert_matrix_into_rec_table(
+    cursor: sqlite3.Cursor, matrix: List[List[int]]
+) -> None:
     # Iterate through the matrix, skipping the placeholder at index 0
     for user_id, post_ids in enumerate(matrix, start=1):
         # Adjusted to start counting from 1
         for post_id in post_ids:
             # Insert each combination of user_id and post_id into the rec table
-            cursor.execute("INSERT INTO rec (user_id, post_id) VALUES (?, ?)",
-                           (user_id, post_id))
+            cursor.execute(
+                "INSERT INTO rec (user_id, post_id) VALUES (?, ?)", (user_id, post_id)
+            )
 
 
 if __name__ == "__main__":
