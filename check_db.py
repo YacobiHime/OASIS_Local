@@ -1,7 +1,7 @@
 import sqlite3
 
-conn = sqlite3.connect("vllm_twitter.db")
+conn = sqlite3.connect("ollama_twitter.db")
 cur = conn.cursor()
-cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-print([r[0] for r in cur.fetchall()])
+cur.execute("PRAGMA table_info(trace)")
+print([r for r in cur.fetchall()])
 conn.close()

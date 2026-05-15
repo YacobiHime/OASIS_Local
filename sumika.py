@@ -241,15 +241,25 @@ async def main():
         print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
         actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
 
+        # ステップ前のtraceの最大IDを記録
+        tr_cur = tracker_conn.cursor()
+        oasis_cur = sqlite3.connect(os.path.abspath(db_path))
+        snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
+        before_max_id = snap[0] if snap[0] else 0
+
         executed_at = datetime.now().isoformat()
         await env.step(actions)
 
-        cur = tracker_conn.cursor()
-        for _, agent in env.agent_graph.get_agents():
-            last_action = agent.last_action
-            if last_action is None:
-                continue
-            cur.execute(
+        # ステップ後に追加されたtraceを取得して独自DBに記録
+        new_rows = oasis_cur.execute(
+            "SELECT user_id, action, info, status FROM trace WHERE id > ?",
+            (before_max_id,),
+        ).fetchall()
+        oasis_cur.close()
+
+        for row in new_rows:
+            user_id, action, info, status = row
+            tr_cur.execute(
                 """
                 INSERT INTO action_log
                 (turn, agent_id, action_type, target_id, content, executed_at)
@@ -257,10 +267,10 @@ async def main():
             """,
                 (
                     i + 1,
-                    agent.agent_id,
-                    str(last_action.action_type),
-                    getattr(last_action, "post_id", None),
-                    getattr(last_action, "content", None),
+                    user_id,
+                    action,
+                    None,
+                    info,
                     executed_at,
                 ),
             )
