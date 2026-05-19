@@ -11,7 +11,7 @@ from camel.types import ModelPlatformType
 from camel.messages import BaseMessage
 
 # 文字化け対策
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+# sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
 db_path = "./ollama_twitter.db"
@@ -79,13 +79,13 @@ def get_timeline_text(conn, tracker_conn=None):
     # post_idと実時刻の対応表を作成
     post_executed_at = {}
     try:
-        # mirror_traceからターン番号→post_idの対応を取得
-        cur = conn.cursor()
-        cur.execute(
+        # mirror_traceからpost_id→ターン番号の対応を取得
+        trace_cur = conn.cursor()
+        trace_cur.execute(
             "SELECT info, created_at FROM mirror_trace WHERE action = 'create_post'"
         )
         trace_posts = {}
-        for row in cur.fetchall():
+        for row in trace_cur.fetchall():
             try:
                 data = json.loads(row[0])
                 pid = data.get("post_id")
@@ -95,15 +95,17 @@ def get_timeline_text(conn, tracker_conn=None):
                 continue
 
         # action_logからターン番号→実時刻の対応を取得
-        cur.execute("SELECT turn, executed_at FROM action_log GROUP BY turn")
-        turn_to_time = {row[0]: row[1] for row in cur.fetchall()}
+        log_cur = conn.cursor()
+        log_cur.execute("SELECT turn, executed_at FROM action_log GROUP BY turn")
+        turn_to_time = {row[0]: row[1] for row in log_cur.fetchall()}
 
         # 組み合わせてpost_idと実時刻を紐付け
         for pid, turn in trace_posts.items():
             real_time = turn_to_time.get(turn)
             if real_time:
                 post_executed_at[pid] = real_time
-    except:
+    except Exception as e:
+        print("DEBUG post_executed_at error:", e)
         pass
 
     try:
