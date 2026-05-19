@@ -197,6 +197,10 @@ async def main():
     if os.path.exists(db_path):
         os.remove(db_path)
 
+    tracker_db_path = "./sumika_tracker.db"
+    if os.path.exists(tracker_db_path):
+        os.remove(tracker_db_path)
+
     env = oasis.make(
         agent_graph=agent_graph,
         platform=oasis.DefaultPlatformType.TWITTER,
@@ -219,19 +223,40 @@ async def main():
 
     seed_posts = load_seed_posts("seeds/seed_posts.json")
 
-    for post in seed_posts:
-        author = env.agent_graph.get_agent(post["author_id"])
+    for i, seed in enumerate(seed_posts):
+        author = env.agent_graph.get_agent(seed["author_id"])
         seed_action = {
             author: [
                 ManualAction(
                     action_type=ActionType.CREATE_POST,
-                    action_args={"content": post["content"]},
+                    action_args={"content": seed["content"]},
                 )
             ]
         }
+        executed_at = datetime.now().isoformat()
         await env.step(seed_action)
 
-    print(f"🌱 初期投稿 {len(seed_posts)} 件を投稿しました。")
+        # ★action_logにseed投稿を記録
+        post_id = i + 1
+        tr_cur = tracker_conn.cursor()
+        tr_cur.execute(
+            """
+            INSERT INTO action_log
+            (turn, agent_id, action_type, target_id, content, executed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                0,  # ターン0（シミュレーション開始前）
+                seed["author_id"],
+                "create_post",
+                post_id,
+                json.dumps(
+                    {"post_id": post_id, "content": seed["content"]}, ensure_ascii=False
+                ),
+                executed_at,
+            ),
+        )
+        tracker_conn.commit()
 
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)

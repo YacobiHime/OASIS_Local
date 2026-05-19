@@ -76,6 +76,36 @@ def get_timeline_text(conn, tracker_conn=None):
         except:
             pass
 
+    # post_idと実時刻の対応表を作成
+    post_executed_at = {}
+    try:
+        # mirror_traceからターン番号→post_idの対応を取得
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT info, created_at FROM mirror_trace WHERE action = 'create_post'"
+        )
+        trace_posts = {}
+        for row in cur.fetchall():
+            try:
+                data = json.loads(row[0])
+                pid = data.get("post_id")
+                if pid is not None:
+                    trace_posts[pid] = row[1]  # ターン番号
+            except:
+                continue
+
+        # action_logからターン番号→実時刻の対応を取得
+        cur.execute("SELECT turn, executed_at FROM action_log GROUP BY turn")
+        turn_to_time = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 組み合わせてpost_idと実時刻を紐付け
+        for pid, turn in trace_posts.items():
+            real_time = turn_to_time.get(turn)
+            if real_time:
+                post_executed_at[pid] = real_time
+    except:
+        pass
+
     try:
         sql_posts = """
         SELECT 
@@ -329,7 +359,7 @@ def show_and_save_results():
     print("--------------------------------------------------")
     print(f"--- 接続先DB: {db_path} ---")
 
-    conn = sqlite3.connect(tracker_db_path)  # 1本化
+    conn = sqlite3.connect(tracker_db_path)
 
     timeline_text = get_timeline_text(conn, tracker_conn=conn)
     action_text = get_action_log_text(conn)
