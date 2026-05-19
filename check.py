@@ -4,6 +4,7 @@ import sys
 import io
 import os
 import json
+import shutil
 from datetime import datetime
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
@@ -14,56 +15,85 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
 db_path = "./ollama_twitter.db"
+tracker_db_path = "./sumika_tracker.db"
+ENABLE_SUMMARY = False  # ★ Falseにすると要約をスキップ
 
 
-def format_info_json(text):
+def format_info_json(text, action_type=""):
     """JSON文字列から不要な情報を省き、見やすく整形して返す"""
     if not isinstance(text, str):
         return str(text)
+    # refreshはpostsリストが長いので1行サマリーだけ返す
+    if action_type == "refresh":
+        try:
+            data = json.loads(text)
+            posts = data.get("posts", [])
+            return f"（タイムライン取得: {len(posts)}件の投稿を表示）"
+        except:
+            return "（タイムライン取得）"
     try:
         data = json.loads(text)
         if isinstance(data, dict):
-            # 表示したくない不要な項目を除外（例としてpromptなどを指定）
-            keys_to_remove = ["prompt", "embeddings", "raw_response"]
+            keys_to_remove = ["prompt", "embeddings", "raw_response", "posts"]
             for k in keys_to_remove:
                 data.pop(k, None)
-
-            # 文字列が長すぎる場合は切り詰める（100文字で省略）
             for k, v in data.items():
-                if isinstance(v, str) and len(v) > 100:
-                    data[k] = v[:100] + "...(省略)"
-
+                if isinstance(v, str) and len(v) > 80:
+                    data[k] = v[:80] + "...(省略)"
         return json.dumps(data, indent=2, ensure_ascii=False)
     except:
         return text
 
 
-def get_timeline_text(conn):
+def get_timeline_text(conn, tracker_conn=None):
     """投稿とコメントをスレッド形式で生成する"""
     text = "【📱 投稿タイムライン (スレッド表示)】\n"
+
+    # インプレッション集計（tracker_connがあれば）
+    impression_count = {}
+    comment_impression_count = {}
+    if tracker_conn:
+        try:
+            cur = tracker_conn.cursor()
+            cur.execute(
+                "SELECT content FROM action_log WHERE action_type = 'refresh' AND content IS NOT NULL"
+            )
+            for row in cur.fetchall():
+                try:
+                    data = json.loads(row[0])
+                    for post in data.get("posts", []):
+                        pid = post.get("post_id")
+                        if pid is not None:
+                            impression_count[pid] = impression_count.get(pid, 0) + 1
+                        for comment in post.get("comments", []):
+                            cid = comment.get("comment_id")
+                            if cid is not None:
+                                comment_impression_count[cid] = (
+                                    comment_impression_count.get(cid, 0) + 1
+                                )
+                except:
+                    continue
+        except:
+            pass
+
     try:
-        # 1. 投稿(Post)を取得（リポスト情報含む）
         sql_posts = """
         SELECT 
-            p1.post_id,
-            p1.user_id, 
-            p1.content, 
-            p1.quote_content,
-            p1.created_at,
+            p1.post_id, p1.user_id, p1.content, p1.quote_content,
+            p1.created_at, p1.num_likes, p1.num_shares, p1.num_reports,
             p1.original_post_id,
             p2.content AS original_content,
             p2.user_id AS original_user_id
-        FROM post p1
-        LEFT JOIN post p2 ON p1.original_post_id = p2.post_id
+        FROM mirror_post p1
+        LEFT JOIN mirror_post p2 ON p1.original_post_id = p2.post_id
         ORDER BY p1.created_at
         """
         posts = pd.read_sql_query(sql_posts, conn)
 
-        # 2. コメント(Comment)を取得
-        # テーブルが存在しない場合に備えて try-except
         try:
-            sql_comments = "SELECT * FROM comment ORDER BY created_at"
-            comments = pd.read_sql_query(sql_comments, conn)
+            comments = pd.read_sql_query(
+                "SELECT * FROM mirror_comment ORDER BY created_at", conn
+            )
         except Exception:
             comments = pd.DataFrame()
 
@@ -72,55 +102,53 @@ def get_timeline_text(conn):
         else:
             for index, row in posts.iterrows():
                 post_id = row["post_id"]
-                text += "-" * 60 + "\n"
-                text += f"⏰ Time: {row['created_at']} | 🆔 Post: {post_id}\n"
-                text += f"👤 User: {row['user_id']}\n"
+                post_comments = (
+                    comments[comments["post_id"] == post_id]
+                    if not comments.empty
+                    else pd.DataFrame()
+                )
+                comment_count = len(post_comments)
 
-                # --- 投稿内容の表示ロジック ---
+                text += "═" * 60 + "\n"
+                text += f"📌 Post:{post_id} | 👤 User:{row['user_id']}\n"
+
                 content = row["content"]
                 original_content = row["original_content"]
                 quote_content = row["quote_content"]
 
                 if row["original_post_id"] and quote_content:
-                    # 引用リポスト
-                    text += f"💬 {quote_content}\n"
-                    text += f"   ↳ 🔁 QT @User{row['original_user_id']}: {content if content else original_content}\n"
+                    text += f"   💬 {quote_content}\n"
+                    text += f"      ↳ 🔁 QT @User{row['original_user_id']}: {content if content else original_content}\n"
                 elif content and content.strip():
-                    # 通常投稿
-                    text += f"💬 {content}\n"
+                    text += f"   💬 {content}\n"
                 elif original_content:
-                    # リポスト
-                    text += f"🔁 [リポスト] @User{row['original_user_id']} の投稿を拡散しました\n"
-                    text += f"   「{original_content}」\n"
+                    text += f"   🔁 [リポスト] @User{row['original_user_id']}:「{original_content}」\n"
                 else:
-                    text += "💬 (本文なし)\n"
+                    text += "   💬 (本文なし)\n"
 
-                # 3. この投稿についたコメントを表示 (Nested)
-                if not comments.empty:
-                    # この投稿(post_id)に紐づくコメントを抽出
-                    post_comments = comments[comments["post_id"] == post_id]
+                imp = impression_count.get(post_id, 0)
+                text += f"   ⏰ {row['created_at']}  👁️ {imp}件の表示\n"
+                text += f"   💬{comment_count}  🔁{row.get('num_shares',0)}  ❤️{row.get('num_likes',0)}\n"
 
-                    if not post_comments.empty:
-                        text += "\n   👇 [コメント欄]\n"
-                        for c_idx, c_row in post_comments.iterrows():
-                            # コメントの「中身」と「誰が書いたか」を表示
-                            c_content = c_row.get("content", "")
-                            c_user = c_row.get("user_id", "?")
-                            c_time = c_row.get("created_at", "?")
-                            text += f"   ├─ ⏰{c_time} 👤User{c_user}: {c_content}\n"
+                if not post_comments.empty:
+                    text += "   ┄" * 20 + "\n"
+                    for c_idx, c_row in post_comments.iterrows():
+                        c_imp = comment_impression_count.get(c_row.get("comment_id"), 0)
+                        text += f"   ├─ ⏰{c_row.get('created_at','?')} 👤User{c_row.get('user_id','?')} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
+                        text += f"   │  {c_row.get('content','')}\n"
 
-            text += "-" * 60 + "\n"
+            text += "═" * 60 + "\n"
     except Exception as e:
         text += f"タイムライン取得エラー: {e}\n"
     return text
 
 
 def get_action_log_text(conn):
-    """行動ログのテキストを生成する（最新20件）"""
-    text = "\n【🤖 エージェント行動ログ (最新20件)】\n"
+    """行動ログのテキストを生成する（最新30件・refreshは1行省略）"""
+    text = "\n【🤖 エージェント行動ログ (最新30件)】\n"
     try:
         actions = pd.read_sql_query(
-            "SELECT * FROM trace ORDER BY id DESC LIMIT 20", conn
+            "SELECT * FROM mirror_trace ORDER BY id DESC LIMIT 30", conn
         )
         actions = actions.iloc[::-1]
 
@@ -128,33 +156,72 @@ def get_action_log_text(conn):
             text += "（行動ログはまだありません）\n"
         else:
             for index, row in actions.iterrows():
-                text += "┌" + "─" * 40 + "\n"
-                text += f"│ ⏰ Time: {row['created_at']} | 👤 User: {row['user_id']}\n"
-
-                # 状態（status）を取得してアイコンを切り替え
+                action_type = row.get("action", "")
                 status = row.get("status", "success")
                 status_icon = "✅" if status == "success" else "❌"
-                text += f"│ {status_icon} Action: {row['action']} (Status: {status})\n"
 
-                # エラー内容がある場合は表示
+                # refreshは1行だけ表示
+                if action_type == "refresh":
+                    text += f"  🔄 Time:{row['created_at']} User:{row['user_id']} refresh {status_icon}\n"
+                    continue
+
+                text += "┌" + "─" * 40 + "\n"
+                text += f"│ ⏰ Time: {row['created_at']} | 👤 User: {row['user_id']}\n"
+                text += f"│ {status_icon} Action: {action_type} (Status: {status})\n"
+
                 if row.get("error_message"):
                     text += f"│ ⚠️ Error: {row['error_message']}\n"
 
-                info_content = ""
-                if "info" in row and row["info"]:
-                    info_content = row["info"]
-                elif "action_params" in row and row["action_params"]:
-                    info_content = row["action_params"]
-
+                info_content = row.get("info") or row.get("action_params") or ""
                 if info_content:
-                    # ここで新しい関数を使用します
-                    formatted_json = format_info_json(info_content)
+                    formatted_json = format_info_json(info_content, action_type)
                     text += "│ 📄 Info:\n"
                     for line in formatted_json.split("\n"):
                         text += f"│    {line}\n"
                 text += "└" + "─" * 40 + "\n"
     except Exception as e:
         text += f"行動ログ取得エラー: {e}\n"
+    return text
+
+
+def get_impression_text(tracker_conn):
+    """action_logのrefreshからインプレッション数を集計して返す"""
+    text = "\n【👁️ インプレッション集計】\n"
+    try:
+        cur = tracker_conn.cursor()
+        cur.execute(
+            "SELECT content FROM action_log WHERE action_type = 'refresh' AND content IS NOT NULL"
+        )
+        rows = cur.fetchall()
+
+        impression_count = {}
+        post_contents = {}
+
+        for row in rows:
+            try:
+                data = json.loads(row[0])
+                for post in data.get("posts", []):
+                    pid = post.get("post_id")
+                    if pid is not None:
+                        impression_count[pid] = impression_count.get(pid, 0) + 1
+                        if pid not in post_contents:
+                            content = post.get("content", "")
+                            post_contents[pid] = (
+                                content[:40] + "..." if len(content) > 40 else content
+                            )
+            except:
+                continue
+
+        if not impression_count:
+            text += "（インプレッションデータがありません）\n"
+        else:
+            text += f"{'Post':>5} {'インプレ':>8}  投稿内容\n"
+            text += "-" * 60 + "\n"
+            for pid in sorted(impression_count.keys()):
+                content_preview = post_contents.get(pid, "")
+                text += f"{pid:>5} {impression_count[pid]:>8}回  {content_preview}\n"
+    except Exception as e:
+        text += f"インプレッション取得エラー: {e}\n"
     return text
 
 
@@ -201,9 +268,57 @@ def generate_summary(log_text):
         return f"⚠️ 要約の生成に失敗しました: {e}"
 
 
+def merge_databases():
+    """ollama_twitter.dbのデータをsumika_tracker.dbにミラーコピーする"""
+    if not os.path.exists(db_path):
+        print(f"⚠️ {db_path} が見つかりません。スキップします。")
+        return
+
+    src = sqlite3.connect(db_path)
+    dst = sqlite3.connect(tracker_db_path)
+    dst_cur = dst.cursor()
+
+    tables = ["user", "post", "comment", "like", "trace"]
+
+    for table in tables:
+        mirror = f"mirror_{table}"
+        try:
+            # 既存のミラーテーブルを削除して再作成
+            dst_cur.execute(f"DROP TABLE IF EXISTS {mirror}")
+
+            # ソーステーブルの構造を取得
+            src_cur = src.execute(f"PRAGMA table_info({table})")
+            columns = src_cur.fetchall()
+            if not columns:
+                continue
+
+            col_defs = ", ".join(f"{col[1]} {col[2]}" for col in columns)
+            dst_cur.execute(f"CREATE TABLE {mirror} ({col_defs})")
+
+            # データをコピー
+            rows = src.execute(f"SELECT * FROM {table}").fetchall()
+            if rows:
+                placeholders = ", ".join("?" * len(columns))
+                dst_cur.executemany(
+                    f"INSERT INTO {mirror} VALUES ({placeholders})", rows
+                )
+
+            dst.commit()
+            print(f"  ✅ {mirror}: {len(rows)}件コピー")
+        except Exception as e:
+            print(f"  ⚠️ {mirror} のコピー失敗: {e}")
+
+    src.close()
+    dst.close()
+
+
 def show_and_save_results():
     output_dir = "result_data"
     os.makedirs(output_dir, exist_ok=True)
+
+    print("🔄 DBをマージ中...")
+    merge_databases()  # ★追加
+    print("✅ マージ完了\n")
 
     now = datetime.now()
     file_name = now.strftime("%Y-%m-%d_%H-%M-%S.txt")
@@ -214,13 +329,21 @@ def show_and_save_results():
     print("--------------------------------------------------")
     print(f"--- 接続先DB: {db_path} ---")
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(tracker_db_path)  # 1本化
 
-    timeline_text = get_timeline_text(conn)
+    timeline_text = get_timeline_text(conn, tracker_conn=conn)
     action_text = get_action_log_text(conn)
-    full_log_text = timeline_text + "\n" + action_text
+    impression_text = get_impression_text(conn)
+    conn.close()
 
-    summary = generate_summary(full_log_text)
+    full_log_text = (
+        timeline_text + "\n" + action_text + "\n" + impression_text
+    )  # ★impression_text追加
+
+    if ENABLE_SUMMARY:
+        summary = generate_summary(full_log_text)
+    else:
+        summary = "（AI要約はスキップされました）"
 
     final_output = "\n" + "=" * 20 + " 【📝 AI要約レポート】 " + "=" * 20 + "\n"
     final_output += summary + "\n"
@@ -233,7 +356,6 @@ def show_and_save_results():
         f.write(final_output)
 
     print(f"\n✅ 保存しました: {output_path}")
-    conn.close()
 
 
 if __name__ == "__main__":
