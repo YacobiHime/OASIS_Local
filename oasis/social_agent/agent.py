@@ -1,12 +1,12 @@
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
-# Licensed under the Apache License, Version 2.0 (the “License”);
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an “AS IS” BASIS,
+# distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -150,6 +150,8 @@ class SocialAgent(ChatAgent):
                 f"Agent {self.social_agent_id} observing environment: " f"{env_prompt}"
             )
             response = await self.astep(user_msg)
+
+            # ★修正1: ループ内のreturnを削除し、全tool_callを処理してからreturnする
             for tool_call in response.info["tool_calls"]:
                 action_name = tool_call.tool_name
                 args = tool_call.args
@@ -162,10 +164,10 @@ class SocialAgent(ChatAgent):
                         f"Agent {self.social_agent_id} get the result: "
                         f"{tool_call.result}"
                     )
-                # Abort graph action for if 100w Agent
-                # self.perform_agent_graph_action(action_name, args)
+                # ★修正2: コメントアウトを外してフォロー/アンフォローをAgentGraphに反映する
+                self.perform_agent_graph_action(action_name, args)
 
-                return response
+            return response
         except Exception as e:
             agent_log.error(f"Agent {self.social_agent_id} error: {e}")
             return e
@@ -200,9 +202,6 @@ class SocialAgent(ChatAgent):
         )
 
         agent_log.info(f"Agent {self.social_agent_id}: {openai_messages}")
-        # NOTE: this is a temporary solution.
-        # Camel can not stop updating the agents' memory after stop and astep
-        # now.
         response = await self._aget_model_response(
             openai_messages=openai_messages, num_tokens=num_tokens
         )
@@ -218,13 +217,11 @@ class SocialAgent(ChatAgent):
         """
         Perform an interview with the agent.
         """
-        # user conduct test to agent
         user_msg = BaseMessage.make_user_message(
             role_name="User", content=("You are a twitter user.")
         )
 
         if self.interview_record:
-            # Test memory should not be writed to memory.
             self.update_memory(message=user_msg, role=OpenAIBackendRole.SYSTEM)
 
         openai_messages, num_tokens = self.memory.get_context()
@@ -243,10 +240,6 @@ class SocialAgent(ChatAgent):
         )
 
         agent_log.info(f"Agent {self.social_agent_id}: {openai_messages}")
-        # NOTE: this is a temporary solution.
-        # Camel can not stop updating the agents' memory after stop and astep
-        # now.
-
         response = await self._aget_model_response(
             openai_messages=openai_messages, num_tokens=num_tokens
         )
@@ -254,19 +247,16 @@ class SocialAgent(ChatAgent):
         content = response.output_messages[0].content
 
         if self.interview_record:
-            # Test memory should not be writed to memory.
             self.update_memory(
                 message=response.output_messages[0], role=OpenAIBackendRole.USER
             )
         agent_log.info(f"Agent {self.social_agent_id} receive response: {content}")
 
-        # Record the complete interview (prompt + response) through the channel
         interview_data = {"prompt": interview_prompt, "response": content}
         result = await self.env.action.perform_action(
             interview_data, ActionType.INTERVIEW.value
         )
 
-        # Return the combined result
         return {
             "user_id": self.social_agent_id,
             "prompt": openai_messages,

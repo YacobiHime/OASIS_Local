@@ -11,6 +11,8 @@ from camel.models import ModelManager
 
 import oasis
 from oasis import ActionType, LLMAction, ManualAction, AgentGraph, SocialAgent, UserInfo
+from oasis.social_platform.platform import Platform
+from oasis.clock.clock import Clock
 
 
 def init_tracker_db(db_path):
@@ -152,11 +154,20 @@ async def main():
     # 2. アクション設定
     # ---------------------------------------------------------
     available_actions = [
+        # --- 公式 Twitter デフォルトセット ---
         ActionType.CREATE_POST,  # 投稿
-        ActionType.CREATE_COMMENT,  # リプライ
         ActionType.LIKE_POST,  # いいね
         ActionType.REPOST,  # リポスト（拡散）
         ActionType.FOLLOW,  # フォロー
+        ActionType.QUOTE_POST,  # 引用リポスト（コメント付き拡散）
+        ActionType.DO_NOTHING,  # 何もしない ★これがないとLLMが毎ターン必ず発言してしまう
+        # --- Twitter的に自然な追加アクション ---
+        ActionType.CREATE_COMMENT,  # リプライ
+        ActionType.LIKE_COMMENT,  # コメントにいいね
+        ActionType.SEARCH_POSTS,  # キーワード検索（能動的な情報収集）
+        ActionType.TREND,  # トレンド確認（流行を見てから行動）
+        ActionType.UNFOLLOW,  # フォロー解除（関係の変化を表現）
+        ActionType.MUTE,  # ミュート（嫌いなユーザーを無視）
     ]
 
     # ---------------------------------------------------------
@@ -201,9 +212,19 @@ async def main():
     if os.path.exists(tracker_db_path):
         os.remove(tracker_db_path)
 
+    platform = Platform(
+        db_path=db_path,
+        recsys_type="twitter",
+        # 1回のrefreshで表示される投稿数（デフォルト1→4）
+        refresh_rec_post_count=4,
+        # 推薦バッファの最大投稿数（デフォルト2→8）
+        max_rec_post_len=8,
+        # 自分の投稿に自分でいいね・低評価できないよう禁止
+        allow_self_rating=False,
+    )
     env = oasis.make(
         agent_graph=agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
+        platform=platform,
         database_path=db_path,
     )
     await env.reset()
