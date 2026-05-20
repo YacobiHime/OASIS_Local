@@ -45,6 +45,61 @@ def format_info_json(text, action_type=""):
         return text
 
 
+def build_turn_to_time(conn, minutes_per_turn=5):
+    """
+    action_logのターン番号→実時刻マッピングを構築する。
+    同一ターンに複数のexecuted_atがある場合は最小値（最初の実行時刻）を使用。
+    minutes_per_turn: 1ターン何分に相当するか（表示上のオフセット用）
+    """
+    turn_to_time = {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT turn, MIN(executed_at) FROM action_log GROUP BY turn")
+        for row in cur.fetchall():
+            turn, executed_at = row
+            if executed_at:
+                try:
+                    dt = datetime.fromisoformat(executed_at)
+                    turn_to_time[turn] = dt
+                except:
+                    pass
+    except:
+        pass
+    return turn_to_time
+
+
+def format_time(turn, turn_to_time, minutes_per_turn=5):
+    """
+    ターン番号を Twitter風時刻文字列に変換する。
+    turn_to_timeにそのターンの実時刻があればそれを使用。
+    なければターン0の時刻 + turn * minutes_per_turn で推定。
+    """
+    if turn in turn_to_time:
+        dt = turn_to_time[turn]
+    elif 0 in turn_to_time:
+        from datetime import timedelta
+
+        dt = turn_to_time[0] + timedelta(minutes=turn * minutes_per_turn)
+    else:
+        return f"Turn{turn}"
+
+    # 午前/午後形式に変換
+    hour = dt.hour
+    minute = dt.minute
+    if hour < 12:
+        ampm = "午前"
+        display_hour = hour if hour != 0 else 12
+    else:
+        ampm = "午後"
+        display_hour = hour - 12 if hour != 12 else 12
+
+    return f"{dt.year}年{dt.month}月{dt.day}日・{ampm}{display_hour}:{minute:02d}"
+
+
+# 1ターン何分に相当するか（ここを変更すると投稿間の時間間隔が変わる）
+MINUTES_PER_TURN = 5
+
+
 def get_timeline_text(conn, tracker_conn=None):
     """投稿とコメントをスレッド形式で生成する"""
     text = "【📱 投稿タイムライン (スレッド表示)】\n"
@@ -76,37 +131,8 @@ def get_timeline_text(conn, tracker_conn=None):
         except:
             pass
 
-    # post_idと実時刻の対応表を作成
-    post_executed_at = {}
-    try:
-        # mirror_traceからpost_id→ターン番号の対応を取得
-        trace_cur = conn.cursor()
-        trace_cur.execute(
-            "SELECT info, created_at FROM mirror_trace WHERE action = 'create_post'"
-        )
-        trace_posts = {}
-        for row in trace_cur.fetchall():
-            try:
-                data = json.loads(row[0])
-                pid = data.get("post_id")
-                if pid is not None:
-                    trace_posts[pid] = row[1]  # ターン番号
-            except:
-                continue
-
-        # action_logからターン番号→実時刻の対応を取得
-        log_cur = conn.cursor()
-        log_cur.execute("SELECT turn, executed_at FROM action_log GROUP BY turn")
-        turn_to_time = {row[0]: row[1] for row in log_cur.fetchall()}
-
-        # 組み合わせてpost_idと実時刻を紐付け
-        for pid, turn in trace_posts.items():
-            real_time = turn_to_time.get(turn)
-            if real_time:
-                post_executed_at[pid] = real_time
-    except Exception as e:
-        print("DEBUG post_executed_at error:", e)
-        pass
+    # ターン番号→実時刻マッピングを構築
+    turn_to_time = build_turn_to_time(conn, MINUTES_PER_TURN)
 
     try:
         sql_posts = """
@@ -159,14 +185,20 @@ def get_timeline_text(conn, tracker_conn=None):
                     text += "   💬 (本文なし)\n"
 
                 imp = impression_count.get(post_id, 0)
-                text += f"   ⏰ {row['created_at']}  👁️ {imp}件の表示\n"
+                time_str = format_time(
+                    row["created_at"], turn_to_time, MINUTES_PER_TURN
+                )
+                text += f"   ⏰ {time_str}  👁️ {imp}件の表示\n"
                 text += f"   💬{comment_count}  🔁{row.get('num_shares',0)}  ❤️{row.get('num_likes',0)}\n"
 
                 if not post_comments.empty:
                     text += "   ┄" * 20 + "\n"
                     for c_idx, c_row in post_comments.iterrows():
                         c_imp = comment_impression_count.get(c_row.get("comment_id"), 0)
-                        text += f"   ├─ ⏰{c_row.get('created_at','?')} 👤User{c_row.get('user_id','?')} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
+                        c_time_str = format_time(
+                            c_row.get("created_at", 0), turn_to_time, MINUTES_PER_TURN
+                        )
+                        text += f"   ├─ ⏰{c_time_str} 👤User{c_row.get('user_id','?')} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
                         text += f"   │  {c_row.get('content','')}\n"
 
             text += "═" * 60 + "\n"
@@ -178,6 +210,7 @@ def get_timeline_text(conn, tracker_conn=None):
 def get_action_log_text(conn):
     """行動ログのテキストを生成する（最新30件・refreshは1行省略）"""
     text = "\n【🤖 エージェント行動ログ (最新30件)】\n"
+    turn_to_time = build_turn_to_time(conn, MINUTES_PER_TURN)
     try:
         actions = pd.read_sql_query(
             "SELECT * FROM mirror_trace ORDER BY id DESC LIMIT 30", conn
@@ -194,11 +227,19 @@ def get_action_log_text(conn):
 
                 # refreshは1行だけ表示
                 if action_type == "refresh":
-                    text += f"  🔄 Time:{row['created_at']} User:{row['user_id']} refresh {status_icon}\n"
+                    time_str = format_time(
+                        row["created_at"], turn_to_time, MINUTES_PER_TURN
+                    )
+                    text += (
+                        f"  🔄 {time_str} User:{row['user_id']} refresh {status_icon}\n"
+                    )
                     continue
 
                 text += "┌" + "─" * 40 + "\n"
-                text += f"│ ⏰ Time: {row['created_at']} | 👤 User: {row['user_id']}\n"
+                time_str = format_time(
+                    row["created_at"], turn_to_time, MINUTES_PER_TURN
+                )
+                text += f"│ ⏰ {time_str} | 👤 User: {row['user_id']}\n"
                 text += f"│ {status_icon} Action: {action_type} (Status: {status})\n"
 
                 if row.get("error_message"):
