@@ -1,0 +1,173 @@
+"""
+Geminiコピペ用プロンプト生成スクリプト
+=======================================
+collect_bluesky.py で収集した raw_users.json を読み込み、
+Geminiのチャットにそのまま貼り付けられるプロンプトを
+gemini_prompt.txt に出力する。
+
+使い方:
+    python make_gemini_prompt.py --input raw_users.json --output gemini_prompt.txt --limit 30
+"""
+
+import json
+import argparse
+import os
+
+
+def build_persona_block(user: dict, agent_id: int) -> str:
+    posts_text = "\n".join(
+        f"  - {p['text'][:100].replace(chr(10), ' ')}" for p in user["posts"][:10]
+    )
+    return f"""### ユーザー {agent_id}
+ハンドル: @{user['handle']}
+表示名: {user['display_name']}
+プロフィール文: {user.get('description') or '（なし）'}
+フォロワー数: {user['followers_count']} / フォロー数: {user['follows_count']}
+直近の日本語投稿:
+{posts_text}
+"""
+
+
+def build_full_prompt(users: list[dict]) -> str:
+    user_blocks = "\n".join(build_persona_block(u, i) for i, u in enumerate(users))
+
+    # seed投稿用のID一覧
+    id_list = ", ".join(str(i) for i in range(len(users)))
+
+    return f"""あなたはSNSシミュレーション研究のアシスタントです。
+以下に示す {len(users)} 人のBlueskyユーザーの実データをもとに、
+OASISシミュレーター用の設定ファイルを2つ生成してください。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【ユーザーデータ】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{user_blocks}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【出力1】profiles/bluesky_profiles.json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+上記 {len(users)} 人それぞれについて、以下の形式のJSONオブジェクトを作り、
+配列にまとめてください。
+
+条件:
+- name: 表示名またはハンドル名をそのまま使用
+- bio: 100〜150文字。年齢・職業は不明なら推測しない。投稿から読み取れる性格・口調・興味を自然な日本語で記述
+- id: 0始まりの連番（0〜{len(users)-1}）
+- other_info.hobbies: 投稿から推測される趣味・関心事
+- other_info.reaction_triggers: 反応しやすそうなトピック
+- other_info.reaction_avoid: スルーしそうなトピック
+- other_info.follow_policy: どんなユーザーをフォロー/アンフォローしそうか
+- other_info.tone_examples: 実際の投稿から抜粋した口調・フレーズの例を3つ（改行区切り）
+
+出力形式（JSONのみ。説明文・```不要）:
+[
+  {{
+    "name": "表示名",
+    "bio": "性格・口調の説明",
+    "id": 0,
+    "other_info": {{
+      "handle": "@handle",
+      "followers": 数値,
+      "hobbies": "趣味・関心",
+      "reaction_triggers": "反応しやすいトピック",
+      "reaction_avoid": "スルーするトピック",
+      "follow_policy": "フォロー/アンフォローの基準",
+      "tone_examples": "・フレーズ1\\n・フレーズ2\\n・フレーズ3"
+    }}
+  }},
+  ...
+]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【出力2】seeds/bluesky_seeds.json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+上記ユーザーたちが混在するタイムラインの初期投稿を10件生成してください。
+
+条件:
+- 日常・社会・テクノロジー・エンタメなど多様なトピックを含めること
+- author_id は {id_list} の中から自然に割り当てること
+- 日本語でSNSらしい自然な文体
+- num_likes・num_reposts は 0〜100 の範囲でリアルに設定
+
+出力形式（JSONのみ。説明文・```不要）:
+[
+  {{
+    "content": "投稿本文",
+    "author_id": 数値,
+    "num_likes": 数値,
+    "num_reposts": 数値,
+    "posted_at": "2026-05-20T10:00:00"
+  }},
+  ...
+]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【出力1】と【出力2】を順番に、JSONのみで出力してください。
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Geminiコピペ用プロンプト生成")
+    parser.add_argument(
+        "--input",
+        type=str,
+        default="raw_users.json",
+        help="collect_bluesky.py の出力ファイル（デフォルト: raw_users.json）",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="gemini_prompt.txt",
+        help="出力するプロンプトファイル（デフォルト: gemini_prompt.txt）",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=30,
+        help="処理するユーザー数の上限（デフォルト: 30）",
+    )
+    args = parser.parse_args()
+
+    # 入力ファイル読み込み
+    with open(args.input, "r", encoding="utf-8") as f:
+        raw_users = json.load(f)
+
+    users = raw_users[: args.limit]
+    print(f"📂 {len(users)}人分のデータを読み込みました。")
+
+    # プロンプト生成
+    prompt = build_full_prompt(users)
+
+    # ファイル保存
+    with open(args.output, "w", encoding="utf-8") as f:
+        f.write(prompt)
+
+    char_count = len(prompt)
+    print(f"✅ プロンプトを '{args.output}' に保存しました。（{char_count:,}文字）")
+
+    # クリップボードにコピー（Windows）
+    try:
+        import subprocess
+
+        subprocess.run(
+            ["powershell", "-command", f"Get-Content '{args.output}' | Set-Clipboard"],
+            check=True,
+        )
+        print("📋 クリップボードにもコピーしました。")
+    except Exception:
+        print(
+            "📋 クリップボードへのコピーはスキップしました。ファイルを直接開いてコピーしてください。"
+        )
+
+    print(f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+次のステップ:
+  1. '{args.output}' の中身をGeminiのチャットに貼り付ける
+  2. 返ってきた【出力1】を profiles/bluesky_profiles.json に保存
+  3. 返ってきた【出力2】を seeds/bluesky_seeds.json に保存
+  4. python sumika.py --profiles profiles/bluesky_profiles.json を実行
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+""")
+
+
+if __name__ == "__main__":
+    main()

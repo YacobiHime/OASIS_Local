@@ -93,17 +93,42 @@ def insert_seed_post(conn, post_id, seed):
 
 
 # ★追加：JSON読み込み用関数
-def load_profiles(file_path):
+def load_profiles(folder_path):
+    """フォルダ内のすべてのJSONファイルを読み込んでマージ、IDを連番に割り当て"""
+    profiles = []
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            profiles = json.load(f)
-            print(f"📂 プロファイル '{file_path}' を読み込みました。")
-            return profiles
-    except FileNotFoundError:
-        print(f"❌ エラー: ファイル '{file_path}' が見つかりません。")
-        exit(1)
-    except json.JSONDecodeError:
-        print(f"❌ エラー: '{file_path}' のJSON形式が正しくありません。")
+        if not os.path.isdir(folder_path):
+            print(f"❌ エラー: '{folder_path}' はディレクトリではありません。")
+            exit(1)
+
+        json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+        if not json_files:
+            print(f"❌ エラー: '{folder_path}' にJSONファイルがありません。")
+            exit(1)
+
+        for json_file in sorted(json_files):
+            file_path = os.path.join(folder_path, json_file)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        profiles.extend(data)
+                    else:
+                        profiles.append(data)
+                print(f"📂 プロファイル '{json_file}' を読み込みました。")
+            except json.JSONDecodeError:
+                print(
+                    f"⚠️ '{json_file}' のJSON形式が正しくありません。スキップします。"
+                )
+
+        # IDを連番に割り当て直す（重複を防ぐ）
+        for i, profile in enumerate(profiles):
+            profile["id"] = i
+
+        print(f"✅ 合計 {len(profiles)} 個のプロファイルを読み込みました。")
+        return profiles
+    except Exception as e:
+        print(f"❌ エラー: {e}")
         exit(1)
 
 
@@ -115,8 +140,8 @@ async def main():
     parser.add_argument(
         "--profiles",
         type=str,
-        default="profiles/test1.json",
-        help="Path to the user profiles JSON file",
+        default="profiles",
+        help="Path to the user profiles folder",
     )
     args = parser.parse_args()
 
@@ -243,7 +268,34 @@ async def main():
             print(f"⚠️ '{file_path}' が見つかりません。スキップします。")
             return []
 
-    seed_posts = load_json_file("seeds/seed_posts.json")
+    def load_all_from_folder(folder_path):
+        """フォルダ内のすべてのJSONファイルを読み込んでマージ"""
+        all_items = []
+        try:
+            if not os.path.isdir(folder_path):
+                print(f"⚠️ '{folder_path}' はディレクトリではありません。")
+                return []
+
+            json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+            for json_file in sorted(json_files):
+                file_path = os.path.join(folder_path, json_file)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            all_items.extend(data)
+                        else:
+                            all_items.append(data)
+                    print(f"📄 '{json_file}' を読み込みました。")
+                except json.JSONDecodeError:
+                    print(
+                        f"⚠️ '{json_file}' のJSON形式が正しくありません。スキップします。"
+                    )
+        except Exception as e:
+            print(f"⚠️ フォルダ読み込みエラー: {e}")
+        return all_items
+
+    seed_posts = load_all_from_folder("seeds")
     seed_comments = load_json_file("seeds/seed_comments.json")
 
     # OASISのDBに直接アクセスするコネクション（いいね数などの上書き用）
