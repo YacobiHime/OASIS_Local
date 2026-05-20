@@ -142,11 +142,6 @@ class SocialAgent(ChatAgent):
                 f"2. 共感した投稿や返信をする投稿には、**必ず同時に**「いいね（like_post）」や「リポスト（repost）」のツールも呼び出してください。\n"
                 f"3. 1回のターンで複数のツールを同時に使用することが強く推奨されています（例：like_postを実行し、同じターン内でcreate_commentも実行するなど）。\n"
                 f"4. 投稿内容やコメントは、必ず「日本語」で出力してください。\n"
-                f"5. 【フォロー/アンフォローのルール】\n"
-                f"   - like_post や create_comment を実行した投稿の author_id のユーザーを、"
-                f"     同じターン内で必ず follow してください。\n"
-                f"   - ただし自分自身はフォローしないでください。\n"
-                f"   - 不快・誤情報と判断した投稿の author_id は unfollow してください。\n"
                 f"現在の環境情報: {env_prompt}"
             ),
         )
@@ -160,6 +155,20 @@ class SocialAgent(ChatAgent):
             for tool_call in response.info["tool_calls"]:
                 action_name = tool_call.tool_name
                 args = tool_call.args
+
+                # ★自己フォロー/自己アンフォロー防止
+                if action_name in ("follow", "unfollow"):
+                    followee_id = args.get("followee_id")
+                    if (
+                        followee_id is not None
+                        and int(followee_id) == self.social_agent_id
+                    ):
+                        agent_log.warning(
+                            f"Agent {self.social_agent_id} tried to "
+                            f"{action_name} themselves. Skipped."
+                        )
+                        continue
+
                 agent_log.info(
                     f"Agent {self.social_agent_id} performed "
                     f"action: {action_name} with args: {args}"
@@ -330,6 +339,8 @@ class SocialAgent(ChatAgent):
             followee_id: int | None = arguments.get("followee_id", None)
             if followee_id is None:
                 return
+            if int(followee_id) == self.social_agent_id:
+                return
             self.agent_graph.remove_edge(self.social_agent_id, followee_id)
             agent_log.info(
                 f"Agent {self.social_agent_id} unfollowed Agent {followee_id}"
@@ -337,6 +348,8 @@ class SocialAgent(ChatAgent):
         elif "follow" in action_name:
             followee_id: int | None = arguments.get("followee_id", None)
             if followee_id is None:
+                return
+            if int(followee_id) == self.social_agent_id:
                 return
             self.agent_graph.add_edge(self.social_agent_id, followee_id)
             agent_log.info(f"Agent {self.social_agent_id} followed Agent {followee_id}")
