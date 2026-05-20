@@ -1,0 +1,58 @@
+[
+  {
+    "post_index": 0,
+    "author_id": 2,
+    "content": "どこのお店ですか？😋",
+    "posted_at": "2025-01-01T08:45:00",
+    "num_likes": 2
+  },
+  {
+    "post_index": 0,
+    "author_id": 0,
+    "content": "ラーメン系？それとも定食？気になる！",
+    "posted_at": "2025-01-01T08:50:00",
+    "num_likes": 1
+  },
+  {
+    "post_index": 2,
+    "author_id": 1,
+    "content": "一緒に頑張りましょう！私も今週から再開しました💦",
+    "posted_at": "2025-01-01T07:30:00",
+    "num_likes": 5
+  },
+  {
+    "post_index": 4,
+    "author_id": 0,
+    "content": "どの機種にしましたか？",
+    "posted_at": "2025-01-01T10:15:00",
+    "num_likes": 3
+  },
+  {
+    "post_index": 5,
+    "author_id": 3,
+    "content": "百年の孤独とか読んだことありますか？人生観変わりますよ",
+    "posted_at": "2025-01-01T11:35:00",
+    "num_likes": 4
+  },
+  {
+    "post_index": 6,
+    "author_id": 2,
+    "content": "わかる。善意でも空回りすること多いよね",
+    "posted_at": "2025-01-01T12:55:00",
+    "num_likes": 8
+  },
+  {
+    "post_index": 7,
+    "author_id": 1,
+    "content": "それめちゃくちゃわかる。数字に縛られすぎてしんどくなってきた",
+    "posted_at": "2025-01-01T13:45:00",
+    "num_likes": 15
+  },
+  {
+    "post_index": 7,
+    "author_id": 0,
+    "content": "でも完全に切り離すのも難しいんですよね…バランスが大事なのかな",
+    "posted_at": "2025-01-01T14:00:00",
+    "num_likes": 9
+  }
+]

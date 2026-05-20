@@ -211,17 +211,24 @@ async def main():
 
     print("🤖: Twitter（X）シミュレーション開始！")
 
-    # 最初のきっかけ作り（ID:0 の住人に初投稿させる）
-    # seed_posts.jsonを読み込んで初期投稿を一括投稿
-    def load_seed_posts(file_path):
+    # ---------------------------------------------------------
+    # seed投稿・コメントを読み込んで投稿＋DB直接書き換えで初期値を注入
+    # ---------------------------------------------------------
+    def load_json_file(file_path):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
-            print(f"⚠️ シードファイル '{file_path}' が見つかりません。スキップします。")
+            print(f"⚠️ '{file_path}' が見つかりません。スキップします。")
             return []
 
-    seed_posts = load_seed_posts("seeds/seed_posts.json")
+    seed_posts = load_json_file("seeds/seed_posts.json")
+    seed_comments = load_json_file("seeds/seed_comments.json")
+
+    # OASISのDBに直接アクセスするコネクション（いいね数などの上書き用）
+    oasis_conn = sqlite3.connect(os.path.abspath(db_path))
+
+    post_id_map = {}  # post_index → 実際のpost_id
 
     for i, seed in enumerate(seed_posts):
         author = env.agent_graph.get_agent(seed["author_id"])
@@ -236,8 +243,24 @@ async def main():
         executed_at = datetime.now().isoformat()
         await env.step(seed_action)
 
-        # ★action_logにseed投稿を記録
         post_id = i + 1
+        post_id_map[i] = post_id
+
+        # OASISのpostテーブルにいいね数・リポスト数を直接書き込む
+        try:
+            oasis_conn.execute(
+                "UPDATE post SET num_likes=?, num_shares=? WHERE post_id=?",
+                (
+                    seed.get("num_likes", 0),
+                    seed.get("num_reposts", 0),
+                    post_id,
+                ),
+            )
+            oasis_conn.commit()
+        except Exception as e:
+            print(f"  ⚠️ post初期値の書き込み失敗 (post_id={post_id}): {e}")
+
+        # action_logにseed投稿を記録
         tr_cur = tracker_conn.cursor()
         tr_cur.execute(
             """
@@ -246,7 +269,7 @@ async def main():
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                0,  # ターン0（シミュレーション開始前）
+                0,
                 seed["author_id"],
                 "create_post",
                 post_id,
@@ -257,6 +280,38 @@ async def main():
             ),
         )
         tracker_conn.commit()
+        print(f"  📝 seed投稿 {post_id}: {seed['content'][:30]}...")
+
+    # seed_commentsをOASISのcommentテーブルに直接INSERT
+    print(f"💬 seed_commentsを注入中 ({len(seed_comments)}件)...")
+    for sc in seed_comments:
+        post_index = sc.get("post_index", 0)
+        post_id = post_id_map.get(post_index)
+        if post_id is None:
+            print(
+                f"  ⚠️ post_index={post_index} に対応する投稿がありません。スキップ。"
+            )
+            continue
+        try:
+            oasis_conn.execute(
+                """
+                INSERT INTO comment (post_id, user_id, content, num_likes, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    post_id,
+                    sc["author_id"],
+                    sc["content"],
+                    sc.get("num_likes", 0),
+                    0,  # created_at=0（ターン0扱い）
+                ),
+            )
+            oasis_conn.commit()
+            print(f"  💬 コメント追加 → post_id={post_id}: {sc['content'][:30]}...")
+        except Exception as e:
+            print(f"  ⚠️ コメント追加失敗: {e}")
+
+    oasis_conn.close()
 
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)

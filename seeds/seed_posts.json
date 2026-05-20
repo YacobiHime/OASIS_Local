@@ -5,16 +5,7 @@
     "posted_at": "2025-01-01T08:32:11",
     "num_likes": 14,
     "num_reposts": 3,
-    "num_quotes": 1,
-    "num_impressions": 320,
-    "comments": [
-      {
-        "author_id": 2,
-        "content": "どこのお店ですか？😋",
-        "posted_at": "2025-01-01T08:45:00",
-        "num_likes": 2
-      }
-    ]
+    "num_impressions": 320
   },
   {
     "author_id": 2,
@@ -22,8 +13,54 @@
     "posted_at": "2025-01-01T09:10:44",
     "num_likes": 8,
     "num_reposts": 1,
-    "num_quotes": 0,
-    "num_impressions": 150,
-    "comments": []
+    "num_impressions": 150
+  },
+  {
+    "author_id": 0,
+    "content": "今日から筋トレ再開します💪 三日坊主にならないようにここで宣言！",
+    "posted_at": "2025-01-01T07:15:00",
+    "num_likes": 22,
+    "num_reposts": 0,
+    "num_impressions": 410
+  },
+  {
+    "author_id": 3,
+    "content": "政府の新しい経済政策、本当に国民のためになるのか？メディアが報じない真実がある…",
+    "posted_at": "2025-01-01T06:50:00",
+    "num_likes": 5,
+    "num_reposts": 2,
+    "num_impressions": 98
+  },
+  {
+    "author_id": 2,
+    "content": "新しいスマホに機種変した！カメラの性能が段違いすぎる📸",
+    "posted_at": "2025-01-01T10:05:22",
+    "num_likes": 31,
+    "num_reposts": 4,
+    "num_impressions": 560
+  },
+  {
+    "author_id": 1,
+    "content": "最近読んだ本が面白すぎて睡眠不足です😇 おすすめあったら教えて",
+    "posted_at": "2025-01-01T11:22:05",
+    "num_likes": 17,
+    "num_reposts": 1,
+    "num_impressions": 275
+  },
+  {
+    "author_id": 0,
+    "content": "電車で席を譲ったら「結構です」って断られた。難しいね、現代社会",
+    "posted_at": "2025-01-01T12:45:33",
+    "num_likes": 44,
+    "num_reposts": 7,
+    "num_impressions": 890
+  },
+  {
+    "author_id": 3,
+    "content": "SNSでの「いいね」の数が人の価値を決めるようになってきた気がして怖い",
+    "posted_at": "2025-01-01T13:30:00",
+    "num_likes": 61,
+    "num_reposts": 12,
+    "num_impressions": 1200
   }
 ]
