@@ -137,11 +137,12 @@ class SocialAgent(ChatAgent):
             role_name="User",
             content=(
                 f"プラットフォームの状況を観察し、ソーシャルメディア上のアクションを行ってください。\n"
-                f"【重要な行動ルール】\n"
-                f"1. 他の投稿に反応する際、コメント（create_comment）だけを行うのは避けてください。\n"
-                f"2. 共感した投稿や返信をする投稿には、**必ず同時に**「いいね（like_post）」や「リポスト（repost）」のツールも呼び出してください。\n"
-                f"3. 1回のターンで複数のツールを同時に使用することが強く推奨されています（例：like_postを実行し、同じターン内でcreate_postも実行するなど）。\n"
-                f"4. 投稿内容やコメントは、必ず140字以内に短く収めてください。\n"
+                f"【行動ルール】\n"
+                f"1. 自分のキャラクターとして自然に行動してください。\n"
+                f"2. 言いたいことがあればcreate_postで投稿してください（1ターンに1件程度が自然です）。毎ターン投稿する必要はありませんが、何ターンも投稿しないのは不自然です。\n"
+                f"3. タイムラインに気になる投稿があれば、like_postやcreate_commentで反応してください。\n"
+                f"4. 特に何もない場合はdo_nothingを選んでも構いません。ただし連続して使いすぎないようにしてください。\n"
+                f"5. 投稿・コメントは140字以内にしてください。\n"
                 f"現在の環境情報: {env_prompt}"
             ),
         )
@@ -152,7 +153,7 @@ class SocialAgent(ChatAgent):
             response = await self.astep(user_msg)
 
             # ★修正1: ループ内のreturnを削除し、全tool_callを処理してからreturnする
-            for tool_call in response.info["tool_calls"]:
+            for tool_call in response.info.get("tool_calls") or []:
                 action_name = tool_call.tool_name
                 args = tool_call.args
 
