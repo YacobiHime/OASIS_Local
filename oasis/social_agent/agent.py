@@ -153,7 +153,7 @@ class SocialAgent(ChatAgent):
             response = await self.astep(user_msg)
 
             # ★修正1: ループ内のreturnを削除し、全tool_callを処理してからreturnする
-            for tool_call in response.info["tool_calls"]:
+            for tool_call in response.info.get("tool_calls") or []:
                 action_name = tool_call.tool_name
                 args = tool_call.args
 
