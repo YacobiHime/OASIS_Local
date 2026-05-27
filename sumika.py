@@ -175,13 +175,8 @@ async def compress_agent_memory(
 
     try:
         user_msg = [{"role": "user", "content": prompt}]
-        response = ollama_model.run(user_msg)
-        if hasattr(response, "choices"):
-            summary_text = response.choices[0].message.content
-        elif hasattr(response, "content"):
-            summary_text = response.content
-        else:
-            summary_text = str(response)
+        response = await ollama_model.arun(user_msg)
+        summary_text = response.choices[0].message.content
     except Exception as e:
         print(f"  ⚠️ メモリ圧縮失敗 (agent={agent.social_agent_id}): {e}")
         return
@@ -315,6 +310,7 @@ async def main():
             agent_graph=agent_graph,
             model=shared_model_manager,
             available_actions=available_actions,
+            message_window_size=10,  # 直近10件のみ保持してコンテキスト膨張を防ぐ
         )
 
         agent_graph.add_agent(agent)
