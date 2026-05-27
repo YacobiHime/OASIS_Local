@@ -132,7 +132,103 @@ def load_profiles(folder_path):
         exit(1)
 
 
+async def compress_agent_memory(
+    agent, ollama_model, turn: int, threshold: int = 10, keep_recent: int = 3
+):
+    """
+    エージェントのメモリが一定数を超えたら、LLMで要約して圧縮する。
+    システムメッセージは保持し、それ以外を要約1件に置き換える。
+    """
+    # システムメッセージ以外のレコードを取得
+    from camel.messages import BaseMessage
+    from camel.types import OpenAIBackendRole
+    from camel.memories import MemoryRecord
+
+    records = agent.memory.retrieve()
+    non_system = [
+        r.memory_record
+        for r in records
+        if r.memory_record.role_at_backend != OpenAIBackendRole.SYSTEM
+    ]
+
+    if len(non_system) < threshold:
+        return  # まだ圧縮不要
+
+    # 圧縮対象: 最新 MEMORY_KEEP_RECENT 件を除いた古い部分
+    to_compress = non_system[:-keep_recent] if keep_recent > 0 else non_system
+    to_keep = non_system[-keep_recent:] if keep_recent > 0 else []
+
+    if not to_compress:
+        return
+
+    # 圧縮対象のテキストを結合
+    history_text = "\n".join(
+        f"[{r.role_at_backend.value}] {r.content}" for r in to_compress
+    )
+
+    prompt = (
+        f"以下はSNSシミュレーション上のユーザー「{agent.user_info.name}」の行動履歴です。\n"
+        f"重要な出来事・感情・関係性・発言だけを3〜5行の日本語で簡潔に要約してください。\n"
+        f"要約のみ出力し、それ以外は一切出力しないでください。\n\n"
+        f"--- 履歴 ---\n{history_text}"
+    )
+
+    try:
+        user_msg = [{"role": "user", "content": prompt}]
+        response = ollama_model.run(user_msg)
+        if hasattr(response, "choices"):
+            summary_text = response.choices[0].message.content
+        elif hasattr(response, "content"):
+            summary_text = response.content
+        else:
+            summary_text = str(response)
+    except Exception as e:
+        print(f"  ⚠️ メモリ圧縮失敗 (agent={agent.social_agent_id}): {e}")
+        return
+
+    # システムメッセージだけ残してクリア
+    system_records = [
+        r.memory_record
+        for r in records
+        if r.memory_record.role_at_backend == OpenAIBackendRole.SYSTEM
+    ]
+    agent.memory.clear()
+    for rec in system_records:
+        agent.memory.write_record(rec)
+
+    # 要約を assistant メッセージとして注入
+    summary_msg = BaseMessage.make_assistant_message(
+        role_name="assistant",
+        content=f"[過去の記憶まとめ (ターン{turn}時点)]\n{summary_text}",
+    )
+    agent.memory.write_record(
+        MemoryRecord(
+            message=summary_msg,
+            role_at_backend=OpenAIBackendRole.ASSISTANT,
+        )
+    )
+
+    # 最近のレコードを復元
+    for rec in to_keep:
+        agent.memory.write_record(rec)
+
+    print(
+        f"  🧠 {agent.user_info.name} のメモリを圧縮しました "
+        f"({len(to_compress)}件 → 要約1件, 最近{len(to_keep)}件保持)"
+    )
+
+
 async def main():
+    # ---------------------------------------------------------
+    # メモリ圧縮の設定
+    # ---------------------------------------------------------
+    # この件数を超えたターンで圧縮を実行する（システムメッセージ除く）
+    MEMORY_COMPRESS_THRESHOLD = 10
+    # 圧縮後も最新N件のレコードはそのまま保持する
+    MEMORY_KEEP_RECENT = 3
+    # N ターンごとにメモリ圧縮チェックを行う（1 = 毎ターン）
+    MEMORY_COMPRESS_INTERVAL = 3
+
     # ---------------------------------------------------------
     # 0. コマンドライン引数の設定
     # ---------------------------------------------------------
@@ -255,6 +351,50 @@ async def main():
     await env.reset()
     tracker_conn = init_tracker_db("sumika_tracker.db")
 
+    # ---------------------------------------------------------
+    # 初期フォロー関係の注入
+    # ---------------------------------------------------------
+    print("🔗 初期フォロー関係を設定中...")
+    follow_conn = sqlite3.connect(os.path.abspath(db_path))
+    follow_count = 0
+
+    for profile in profiles:
+        follower_id = profile["id"]
+        for followee_id in profile.get("initial_follows", []):
+            # 自己フォローはスキップ
+            if follower_id == followee_id:
+                continue
+            # 対象IDが存在するか確認
+            if not any(p["id"] == followee_id for p in profiles):
+                print(
+                    f"  ⚠️ initial_follows: ID={followee_id} は存在しません。スキップ。"
+                )
+                continue
+            try:
+                # followテーブルに挿入
+                follow_conn.execute(
+                    "INSERT OR IGNORE INTO follow (follower_id, followee_id, created_at) VALUES (?, ?, ?)",
+                    (follower_id, followee_id, 0),
+                )
+                # num_followings / num_followers を更新
+                follow_conn.execute(
+                    "UPDATE user SET num_followings = num_followings + 1 WHERE user_id = ?",
+                    (follower_id,),
+                )
+                follow_conn.execute(
+                    "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?",
+                    (followee_id,),
+                )
+                follow_conn.commit()
+                # AgentGraphにもエッジを追加（推薦システム用）
+                env.agent_graph.add_edge(follower_id, followee_id)
+                follow_count += 1
+            except Exception as e:
+                print(f"  ⚠️ フォロー設定失敗 ({follower_id}→{followee_id}): {e}")
+
+    follow_conn.close()
+    print(f"✅ 初期フォロー関係: {follow_count}件設定しました。")
+
     print("🤖: Twitter（X）シミュレーション開始！")
 
     # ---------------------------------------------------------
@@ -365,14 +505,17 @@ async def main():
                 f"  ⚠️ post_index={post_index} に対応する投稿がありません。スキップ。"
             )
             continue
+        parent_comment_id = sc.get("parent_comment_id", None)
         try:
             oasis_conn.execute(
                 """
-                INSERT INTO comment (post_id, user_id, content, num_likes, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO comment
+                (post_id, parent_comment_id, user_id, content, num_likes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     post_id,
+                    parent_comment_id,
                     sc["author_id"],
                     sc["content"],
                     sc.get("num_likes", 0),
@@ -380,7 +523,14 @@ async def main():
                 ),
             )
             oasis_conn.commit()
-            print(f"  💬 コメント追加 → post_id={post_id}: {sc['content'][:30]}...")
+            reply_info = (
+                f" (→ comment_id={parent_comment_id}への返信)"
+                if parent_comment_id
+                else ""
+            )
+            print(
+                f"  💬 コメント追加{reply_info} → post_id={post_id}: {sc['content'][:30]}..."
+            )
         except Exception as e:
             print(f"  ⚠️ コメント追加失敗: {e}")
 
@@ -402,6 +552,18 @@ async def main():
 
         executed_at = datetime.now().isoformat()
         await env.step(actions)
+
+        # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
+        if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
+            print(f"  🧠 メモリ圧縮チェック中...")
+            for _, agent in env.agent_graph.get_agents():
+                await compress_agent_memory(
+                    agent,
+                    ollama_model,
+                    i + 1,
+                    threshold=MEMORY_COMPRESS_THRESHOLD,
+                    keep_recent=MEMORY_KEEP_RECENT,
+                )
 
         # ステップ後に追加されたtraceを取得して独自DBに記録
         new_rows = oasis_cur.execute(

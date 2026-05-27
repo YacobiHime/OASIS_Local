@@ -134,6 +134,19 @@ def get_timeline_text(conn, tracker_conn=None):
     # ターン番号→実時刻マッピングを構築
     turn_to_time = build_turn_to_time(conn, MINUTES_PER_TURN)
 
+    # user_id → name マッピングを構築
+    user_name_map = {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, name FROM mirror_user")
+        for uid, uname in cur.fetchall():
+            user_name_map[uid] = uname if uname else f"User{uid}"
+    except Exception:
+        pass
+
+    def uid_to_name(uid):
+        return user_name_map.get(uid, f"User{uid}")
+
     try:
         sql_posts = """
         SELECT 
@@ -168,7 +181,7 @@ def get_timeline_text(conn, tracker_conn=None):
                 comment_count = len(post_comments)
 
                 text += "═" * 60 + "\n"
-                text += f"📌 Post:{post_id} | 👤 User:{row['user_id']}\n"
+                text += f"📌 Post:{post_id} | 👤 {uid_to_name(row['user_id'])}\n"
 
                 content = row["content"]
                 original_content = row["original_content"]
@@ -176,11 +189,11 @@ def get_timeline_text(conn, tracker_conn=None):
 
                 if row["original_post_id"] and quote_content:
                     text += f"   💬 {quote_content}\n"
-                    text += f"      ↳ 🔁 QT @User{row['original_user_id']}: {content if content else original_content}\n"
+                    text += f"      ↳ 🔁 QT @{uid_to_name(row['original_user_id'])}: {content if content else original_content}\n"
                 elif content and content.strip():
                     text += f"   💬 {content}\n"
                 elif original_content:
-                    text += f"   🔁 [リポスト] @User{row['original_user_id']}:「{original_content}」\n"
+                    text += f"   🔁 [リポスト] @{uid_to_name(row['original_user_id'])}:「{original_content}」\n"
                 else:
                     text += "   💬 (本文なし)\n"
 
@@ -198,7 +211,7 @@ def get_timeline_text(conn, tracker_conn=None):
                         c_time_str = format_time(
                             c_row.get("created_at", 0), turn_to_time, MINUTES_PER_TURN
                         )
-                        text += f"   ├─ ⏰{c_time_str} 👤User{c_row.get('user_id','?')} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
+                        text += f"   ├─ ⏰{c_time_str} 👤{uid_to_name(c_row.get('user_id'))} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
                         text += f"   │  {c_row.get('content','')}\n"
 
             text += "═" * 60 + "\n"
@@ -211,6 +224,20 @@ def get_action_log_text(conn):
     """行動ログのテキストを生成する（最新30件・refreshは1行省略）"""
     text = "\n【🤖 エージェント行動ログ (最新30件)】\n"
     turn_to_time = build_turn_to_time(conn, MINUTES_PER_TURN)
+
+    # user_id → name マッピングを構築
+    user_name_map = {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, name FROM mirror_user")
+        for uid, uname in cur.fetchall():
+            user_name_map[uid] = uname if uname else f"User{uid}"
+    except Exception:
+        pass
+
+    def uid_to_name(uid):
+        return user_name_map.get(uid, f"User{uid}")
+
     try:
         actions = pd.read_sql_query(
             "SELECT * FROM mirror_trace ORDER BY id DESC LIMIT 30", conn
@@ -230,16 +257,14 @@ def get_action_log_text(conn):
                     time_str = format_time(
                         row["created_at"], turn_to_time, MINUTES_PER_TURN
                     )
-                    text += (
-                        f"  🔄 {time_str} User:{row['user_id']} refresh {status_icon}\n"
-                    )
+                    text += f"  🔄 {time_str} {uid_to_name(row['user_id'])} refresh {status_icon}\n"
                     continue
 
                 text += "┌" + "─" * 40 + "\n"
                 time_str = format_time(
                     row["created_at"], turn_to_time, MINUTES_PER_TURN
                 )
-                text += f"│ ⏰ {time_str} | 👤 User: {row['user_id']}\n"
+                text += f"│ ⏰ {time_str} | 👤 {uid_to_name(row['user_id'])}\n"
                 text += f"│ {status_icon} Action: {action_type} (Status: {status})\n"
 
                 if row.get("error_message"):
