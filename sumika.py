@@ -163,7 +163,7 @@ async def compress_agent_memory(
 
     # 圧縮対象のテキストを結合
     history_text = "\n".join(
-        f"[{r.role_at_backend.value}] {r.content}" for r in to_compress
+        f"[{r.role_at_backend.value}] {r.message.content}" for r in to_compress
     )
 
     prompt = (
