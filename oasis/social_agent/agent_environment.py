@@ -36,8 +36,7 @@ class SocialEnvironment(Environment):
     follows_env_template = Template("現在 $num_follows 人をフォローしています。")
 
     # 投稿リストのテンプレート（中身はget_posts_envで作るからシンプルに）
-    posts_env_template = Template(
-        "\n$posts")
+    posts_env_template = Template("\n$posts")
 
     # グループチャットの情報も日本語化
     groups_env_template = Template(
@@ -46,7 +45,8 @@ class SocialEnvironment(Environment):
         "現在参加しているグループ: $joined_groups\n"
         "届いているメッセージ: $messages\n"
         "（興味のあるグループに参加したり、メッセージを送ったりできますが、"
-        "メッセージ送信は参加済みのグループにしかできません。）")
+        "メッセージ送信は参加済みのグループにしかできません。）"
+    )
 
     # 全体の指示テンプレート
     env_template = Template(
@@ -56,55 +56,59 @@ class SocialEnvironment(Environment):
         "$groups_env\n"
         "$posts_env\n\n"
         "【指示】\n"
-        "上記の状況を見て、あなたのプロフィールや性格、投稿内容に基づき、"
-        "最も適切と思われるアクションを1つ選んで実行してください。"
-        "単に「いいね（like）」するだけでなく、コメントや投稿など、能動的なアクションを検討してください。")
+        "上記の状況を見て、あなたのプロフィールや性格に基づき、自然なアクションを選んで実行してください。\n"
+        "- 言いたいことがあればcreate_postで投稿してください。毎ターン投稿する必要はありませんが、何ターンも投稿しないのは不自然です。\n"
+        "- タイムラインの投稿にはlike_postやcreate_commentで積極的に反応してください。\n"
+        "- 特に何もない場合はdo_nothingでも構いませんが、連続して使いすぎないようにしてください。"
+    )
 
     def __init__(self, action: SocialAction):
         self.action = action
 
     async def get_posts_env(self) -> str:
         posts = await self.action.refresh()
-        
+
         # ★ここが大改革ポイント！ JSONをパースして読みやすいテキストにするよ★
         if posts["success"]:
             formatted_posts = []
             post_list = posts.get("posts", [])
-            
+
             if not post_list:
                 return "【タイムライン】\n新しい投稿はありません。"
 
             formatted_posts.append("【タイムライン】(最新の投稿一覧)")
             formatted_posts.append("-" * 40)
-            
+
             for post in post_list:
                 # 投稿の基本情報
-                post_id = post.get('post_id', '?')
-                user_name = post.get('user_name', 'Unknown')
-                content = post.get('content', '')
-                likes = post.get('num_likes', 0)
-                
-                post_str = (f"🆔PostID: {post_id}\n"
-                            f"👤Name: {user_name}\n"
-                            f"💬Content: {content}\n"
-                            f"❤️Likes: {likes}")
-                
+                post_id = post.get("post_id", "?")
+                user_name = post.get("user_name", "Unknown")
+                content = post.get("content", "")
+                likes = post.get("num_likes", 0)
+
+                post_str = (
+                    f"🆔PostID: {post_id}\n"
+                    f"👤Name: {user_name}\n"
+                    f"💬Content: {content}\n"
+                    f"❤️Likes: {likes}"
+                )
+
                 # コメントがあれば追加
-                comments = post.get('comments', [])
+                comments = post.get("comments", [])
                 if comments:
                     post_str += "\n   👇[コメント]"
                     for comment in comments:
-                        c_user = comment.get('user_name', 'Unknown')
-                        c_content = comment.get('content', '')
+                        c_user = comment.get("user_name", "Unknown")
+                        c_content = comment.get("content", "")
                         post_str += f"\n   └ 👤{c_user}: {c_content}"
-                
+
                 formatted_posts.append(post_str)
                 formatted_posts.append("-" * 40)
 
             posts_env = "\n".join(formatted_posts)
         else:
             posts_env = "【タイムライン】\n投稿の取得に失敗しました。"
-            
+
         return posts_env
 
     async def get_followers_env(self) -> str:
@@ -113,15 +117,15 @@ class SocialEnvironment(Environment):
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT num_followers FROM user WHERE agent_id = ?",
-                           (agent_id, ))
+            cursor.execute(
+                "SELECT num_followers FROM user WHERE agent_id = ?", (agent_id,)
+            )
             result = cursor.fetchone()
             num_followers = result[0] if result else 0
             conn.close()
         except Exception:
             num_followers = 0
-        return self.followers_env_template.substitute(
-            {"num_followers": num_followers})
+        return self.followers_env_template.substitute({"num_followers": num_followers})
 
     async def get_follows_env(self) -> str:
         agent_id = self.action.agent_id
@@ -130,15 +134,14 @@ class SocialEnvironment(Environment):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT num_followings FROM user WHERE agent_id = ?",
-                (agent_id, ))
+                "SELECT num_followings FROM user WHERE agent_id = ?", (agent_id,)
+            )
             result = cursor.fetchone()
             num_followings = result[0] if result else 0
             conn.close()
         except Exception:
             num_followings = 0
-        return self.follows_env_template.substitute(
-            {"num_follows": num_followings})
+        return self.follows_env_template.substitute({"num_follows": num_followings})
 
     async def get_group_env(self) -> str:
         groups = await self.action.listen_from_group()
@@ -164,10 +167,12 @@ class SocialEnvironment(Environment):
         include_followers: bool = True,
         include_follows: bool = True,
     ) -> str:
-        followers_env = (await self.get_followers_env()
-                         if include_follows else "フォロワー情報なし")
-        follows_env = (await self.get_follows_env()
-                       if include_followers else "フォロー情報なし")
+        followers_env = (
+            await self.get_followers_env() if include_follows else "フォロワー情報なし"
+        )
+        follows_env = (
+            await self.get_follows_env() if include_followers else "フォロー情報なし"
+        )
         posts_env = await self.get_posts_env() if include_posts else ""
 
         return self.env_template.substitute(

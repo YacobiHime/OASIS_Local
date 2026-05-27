@@ -27,7 +27,8 @@ class SocialAction:
 
     def get_openai_function_list(self) -> list[FunctionTool]:
         return [
-            FunctionTool(func) for func in [
+            FunctionTool(func)
+            for func in [
                 self.create_post,
                 self.like_post,
                 self.repost,
@@ -62,7 +63,8 @@ class SocialAction:
 
     async def perform_action(self, message: Any, type: str):
         message_id = await self.channel.write_to_receive_queue(
-            (self.agent_id, message, type))
+            (self.agent_id, message, type)
+        )
         response = await self.channel.read_from_send_queue(message_id)
         return response[2]
 
@@ -289,8 +291,7 @@ class SocialAction:
             Attempting to dislike a post that the user has already liked will
             result in a failure.
         """
-        return await self.perform_action(post_id,
-                                         ActionType.DISLIKE_POST.value)
+        return await self.perform_action(post_id, ActionType.DISLIKE_POST.value)
 
     async def undo_dislike_post(self, post_id: int):
         """Remove a dislike for a post.
@@ -313,8 +314,7 @@ class SocialAction:
             Attempting to remove a dislike for a post that the user has not
             previously liked will result in a failure.
         """
-        return await self.perform_action(post_id,
-                                         ActionType.UNDO_DISLIKE_POST.value)
+        return await self.perform_action(post_id, ActionType.UNDO_DISLIKE_POST.value)
 
     async def search_posts(self, query: str):
         r"""Search posts based on a given query.
@@ -434,8 +434,7 @@ class SocialAction:
             Example of a successful return:
             {"success": True, "follow_id": 123}
         """
-        return await self.perform_action(followee_id,
-                                         ActionType.UNFOLLOW.value)
+        return await self.perform_action(followee_id, ActionType.UNFOLLOW.value)
 
     async def mute(self, mutee_id: int):
         r"""Mute a user.
@@ -506,18 +505,23 @@ class SocialAction:
         """
         return await self.perform_action(None, ActionType.TREND.value)
 
-    async def create_comment(self, post_id: int, content: str):
+    async def create_comment(
+        self, post_id: int, content: str, parent_comment_id: int = None
+    ):
         r"""Create a new comment for a specified post given content.
 
         This method creates a new comment based on the provided content and
-        associates it with the given post ID. Upon successful execution, it
-        returns a dictionary indicating success and the ID of the newly created
-        comment.
+        associates it with the given post ID. To reply to an existing comment
+        (nested reply), supply the optional parent_comment_id. Upon successful
+        execution, it returns a dictionary indicating success and the ID of the
+        newly created comment.
 
         Args:
             post_id (int): The ID of the post to which the comment is to be
                 added.
             content (str): The content of the comment to be created.
+            parent_comment_id (int, optional): The ID of the comment being
+                replied to. Omit or pass None for a top-level comment.
 
         Returns:
             dict: A dictionary with two key-value pairs. The 'success' key
@@ -525,12 +529,19 @@ class SocialAction:
                 successful. The 'comment_id' key maps to the integer ID of the
                 newly created comment.
 
-            Example of a successful return:
+            Example of a top-level comment:
                 {'success': True, 'comment_id': 123}
+
+            Example of a nested reply:
+                {'success': True, 'comment_id': 124}
         """
-        comment_message = (post_id, content)
-        return await self.perform_action(comment_message,
-                                         ActionType.CREATE_COMMENT.value)
+        if parent_comment_id is not None:
+            comment_message = (post_id, content, parent_comment_id)
+        else:
+            comment_message = (post_id, content)
+        return await self.perform_action(
+            comment_message, ActionType.CREATE_COMMENT.value
+        )
 
     async def like_comment(self, comment_id: int):
         r"""Create a new like for a specified comment.
@@ -556,8 +567,7 @@ class SocialAction:
             Attempting to like a comment that the user has already liked will
             result in a failure.
         """
-        return await self.perform_action(comment_id,
-                                         ActionType.LIKE_COMMENT.value)
+        return await self.perform_action(comment_id, ActionType.LIKE_COMMENT.value)
 
     async def unlike_comment(self, comment_id: int):
         """Remove a like for a comment based on the comment's ID.
@@ -580,8 +590,7 @@ class SocialAction:
             Attempting to remove a like for a comment that the user has not
             previously liked will result in a failure.
         """
-        return await self.perform_action(comment_id,
-                                         ActionType.UNLIKE_COMMENT.value)
+        return await self.perform_action(comment_id, ActionType.UNLIKE_COMMENT.value)
 
     async def dislike_comment(self, comment_id: int):
         r"""Create a new dislike for a specified comment.
@@ -607,8 +616,7 @@ class SocialAction:
             Attempting to dislike a comment that the user has already liked
             will result in a failure.
         """
-        return await self.perform_action(comment_id,
-                                         ActionType.DISLIKE_COMMENT.value)
+        return await self.perform_action(comment_id, ActionType.DISLIKE_COMMENT.value)
 
     async def undo_dislike_comment(self, comment_id: int):
         """Remove a dislike for a comment.
@@ -632,8 +640,9 @@ class SocialAction:
             Attempting to remove a dislike for a comment that the user has not
             previously disliked will result in a failure.
         """
-        return await self.perform_action(comment_id,
-                                         ActionType.UNDO_DISLIKE_COMMENT.value)
+        return await self.perform_action(
+            comment_id, ActionType.UNDO_DISLIKE_COMMENT.value
+        )
 
     async def purchase_product(self, product_name: str, purchase_num: int):
         r"""Purchase a product.
@@ -647,8 +656,9 @@ class SocialAction:
                 successful.
         """
         purchase_message = (product_name, purchase_num)
-        return await self.perform_action(purchase_message,
-                                         ActionType.PURCHASE_PRODUCT.value)
+        return await self.perform_action(
+            purchase_message, ActionType.PURCHASE_PRODUCT.value
+        )
 
     async def interview(self, prompt: str):
         r"""Interview an agent with the given prompt.
@@ -697,8 +707,7 @@ class SocialAction:
             result in a failure.
         """
         report_message = (post_id, report_reason)
-        return await self.perform_action(report_message,
-                                         ActionType.REPORT_POST.value)
+        return await self.perform_action(report_message, ActionType.REPORT_POST.value)
 
     async def create_group(self, group_name: str):
         r"""Creates a new group on the platform.
@@ -710,8 +719,7 @@ class SocialAction:
             dict: Platform response indicating success or failure,
             e.g.{"success": True, "group_id": 1}
         """
-        return await self.perform_action(group_name,
-                                         ActionType.CREATE_GROUP.value)
+        return await self.perform_action(group_name, ActionType.CREATE_GROUP.value)
 
     async def join_group(self, group_id: int):
         r"""Joins a group with the specified ID.
@@ -735,8 +743,7 @@ class SocialAction:
             dict: Platform response indicating success or failure, e.g.
             {"success": True}
         """
-        return await self.perform_action(group_id,
-                                         ActionType.LEAVE_GROUP.value)
+        return await self.perform_action(group_id, ActionType.LEAVE_GROUP.value)
 
     async def send_to_group(self, group_id: int, message: str):
         r"""Sends a message to a specific group.
@@ -749,10 +756,12 @@ class SocialAction:
             dict: Platform response indicating success or failure, e.g.
              {"success": True, "message_id": 123}
         """
-        return await self.perform_action((group_id, message),
-                                         ActionType.SEND_TO_GROUP.value)
+        return await self.perform_action(
+            (group_id, message), ActionType.SEND_TO_GROUP.value
+        )
 
     async def listen_from_group(self):
         r"""Listen messages from groups"""
-        return await self.perform_action(self.agent_id,
-                                         ActionType.LISTEN_FROM_GROUP.value)
+        return await self.perform_action(
+            self.agent_id, ActionType.LISTEN_FROM_GROUP.value
+        )

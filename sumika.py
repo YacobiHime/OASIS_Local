@@ -11,6 +11,8 @@ from camel.models import ModelManager
 
 import oasis
 from oasis import ActionType, LLMAction, ManualAction, AgentGraph, SocialAgent, UserInfo
+from oasis.social_platform.platform import Platform
+from oasis.clock.clock import Clock
 
 
 def init_tracker_db(db_path):
@@ -36,6 +38,17 @@ def init_tracker_db(db_path):
             content       TEXT,
             posted_at     TEXT,
             num_likes     INTEGER DEFAULT 0
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS action_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            turn        INTEGER,
+            agent_id    INTEGER,
+            action_type TEXT,
+            target_id   INTEGER,
+            content     TEXT,
+            executed_at TEXT
         )
     """)
     conn.commit()
@@ -80,21 +93,137 @@ def insert_seed_post(conn, post_id, seed):
 
 
 # ★追加：JSON読み込み用関数
-def load_profiles(file_path):
+def load_profiles(folder_path):
+    """フォルダ内のすべてのJSONファイルを読み込んでマージ、IDを連番に割り当て"""
+    profiles = []
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            profiles = json.load(f)
-            print(f"📂 プロファイル '{file_path}' を読み込みました。")
-            return profiles
-    except FileNotFoundError:
-        print(f"❌ エラー: ファイル '{file_path}' が見つかりません。")
+        if not os.path.isdir(folder_path):
+            print(f"❌ エラー: '{folder_path}' はディレクトリではありません。")
+            exit(1)
+
+        json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+        if not json_files:
+            print(f"❌ エラー: '{folder_path}' にJSONファイルがありません。")
+            exit(1)
+
+        for json_file in sorted(json_files):
+            file_path = os.path.join(folder_path, json_file)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        profiles.extend(data)
+                    else:
+                        profiles.append(data)
+                print(f"📂 プロファイル '{json_file}' を読み込みました。")
+            except json.JSONDecodeError:
+                print(
+                    f"⚠️ '{json_file}' のJSON形式が正しくありません。スキップします。"
+                )
+
+        # IDを連番に割り当て直す（重複を防ぐ）
+        for i, profile in enumerate(profiles):
+            profile["id"] = i
+
+        print(f"✅ 合計 {len(profiles)} 個のプロファイルを読み込みました。")
+        return profiles
+    except Exception as e:
+        print(f"❌ エラー: {e}")
         exit(1)
-    except json.JSONDecodeError:
-        print(f"❌ エラー: '{file_path}' のJSON形式が正しくありません。")
-        exit(1)
+
+
+async def compress_agent_memory(
+    agent, ollama_model, turn: int, threshold: int = 10, keep_recent: int = 3
+):
+    """
+    エージェントのメモリが一定数を超えたら、LLMで要約して圧縮する。
+    システムメッセージは保持し、それ以外を要約1件に置き換える。
+    """
+    # システムメッセージ以外のレコードを取得
+    from camel.messages import BaseMessage
+    from camel.types import OpenAIBackendRole
+    from camel.memories import MemoryRecord
+
+    records = agent.memory.retrieve()
+    non_system = [
+        r.memory_record
+        for r in records
+        if r.memory_record.role_at_backend != OpenAIBackendRole.SYSTEM
+    ]
+
+    if len(non_system) < threshold:
+        return  # まだ圧縮不要
+
+    # 圧縮対象: 最新 MEMORY_KEEP_RECENT 件を除いた古い部分
+    to_compress = non_system[:-keep_recent] if keep_recent > 0 else non_system
+    to_keep = non_system[-keep_recent:] if keep_recent > 0 else []
+
+    if not to_compress:
+        return
+
+    # 圧縮対象のテキストを結合
+    history_text = "\n".join(
+        f"[{r.role_at_backend.value}] {r.message.content}" for r in to_compress
+    )
+
+    prompt = (
+        f"以下はSNSシミュレーション上のユーザー「{agent.user_info.name}」の行動履歴です。\n"
+        f"重要な出来事・感情・関係性・発言だけを3〜5行の日本語で簡潔に要約してください。\n"
+        f"要約のみ出力し、それ以外は一切出力しないでください。\n\n"
+        f"--- 履歴 ---\n{history_text}"
+    )
+
+    try:
+        user_msg = [{"role": "user", "content": prompt}]
+        response = await ollama_model.arun(user_msg)
+        summary_text = response.choices[0].message.content
+    except Exception as e:
+        print(f"  ⚠️ メモリ圧縮失敗 (agent={agent.social_agent_id}): {e}")
+        return
+
+    # システムメッセージだけ残してクリア
+    system_records = [
+        r.memory_record
+        for r in records
+        if r.memory_record.role_at_backend == OpenAIBackendRole.SYSTEM
+    ]
+    agent.memory.clear()
+    for rec in system_records:
+        agent.memory.write_record(rec)
+
+    # 要約を assistant メッセージとして注入
+    summary_msg = BaseMessage.make_assistant_message(
+        role_name="assistant",
+        content=f"[過去の記憶まとめ (ターン{turn}時点)]\n{summary_text}",
+    )
+    agent.memory.write_record(
+        MemoryRecord(
+            message=summary_msg,
+            role_at_backend=OpenAIBackendRole.ASSISTANT,
+        )
+    )
+
+    # 最近のレコードを復元
+    for rec in to_keep:
+        agent.memory.write_record(rec)
+
+    print(
+        f"  🧠 {agent.user_info.name} のメモリを圧縮しました "
+        f"({len(to_compress)}件 → 要約1件, 最近{len(to_keep)}件保持)"
+    )
 
 
 async def main():
+    # ---------------------------------------------------------
+    # メモリ圧縮の設定
+    # ---------------------------------------------------------
+    # この件数を超えたターンで圧縮を実行する（システムメッセージ除く）
+    MEMORY_COMPRESS_THRESHOLD = 10
+    # 圧縮後も最新N件のレコードはそのまま保持する
+    MEMORY_KEEP_RECENT = 3
+    # N ターンごとにメモリ圧縮チェックを行う（1 = 毎ターン）
+    MEMORY_COMPRESS_INTERVAL = 3
+
     # ---------------------------------------------------------
     # 0. コマンドライン引数の設定
     # ---------------------------------------------------------
@@ -102,8 +231,8 @@ async def main():
     parser.add_argument(
         "--profiles",
         type=str,
-        default="profiles/test1.json",
-        help="Path to the user profiles JSON file",
+        default="profiles",
+        help="Path to the user profiles folder",
     )
     args = parser.parse_args()
 
@@ -116,7 +245,7 @@ async def main():
 
     ollama_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type="gemma4:e4b",
+        model_type="joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
         url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
         api_key="ollama",  # エラー回避用のダミーキー
     )
@@ -141,11 +270,20 @@ async def main():
     # 2. アクション設定
     # ---------------------------------------------------------
     available_actions = [
+        # --- 公式 Twitter デフォルトセット ---
         ActionType.CREATE_POST,  # 投稿
-        ActionType.CREATE_COMMENT,  # リプライ
         ActionType.LIKE_POST,  # いいね
         ActionType.REPOST,  # リポスト（拡散）
         ActionType.FOLLOW,  # フォロー
+        ActionType.QUOTE_POST,  # 引用リポスト（コメント付き拡散）
+        ActionType.DO_NOTHING,  # 何もしない ★これがないとLLMが毎ターン必ず発言してしまう
+        # --- Twitter的に自然な追加アクション ---
+        ActionType.CREATE_COMMENT,  # リプライ
+        ActionType.LIKE_COMMENT,  # コメントにいいね
+        ActionType.SEARCH_POSTS,  # キーワード検索（能動的な情報収集）
+        ActionType.TREND,  # トレンド確認（流行を見てから行動）
+        ActionType.UNFOLLOW,  # フォロー解除（関係の変化を表現）
+        ActionType.MUTE,  # ミュート（嫌いなユーザーを無視）
     ]
 
     # ---------------------------------------------------------
@@ -172,6 +310,7 @@ async def main():
             agent_graph=agent_graph,
             model=shared_model_manager,
             available_actions=available_actions,
+            message_window_size=10,  # 直近10件のみ保持してコンテキスト膨張を防ぐ
         )
 
         agent_graph.add_agent(agent)
@@ -186,41 +325,212 @@ async def main():
     if os.path.exists(db_path):
         os.remove(db_path)
 
+    tracker_db_path = "./sumika_tracker.db"
+    if os.path.exists(tracker_db_path):
+        os.remove(tracker_db_path)
+
+    platform = Platform(
+        db_path=db_path,
+        recsys_type="twitter",
+        # 1回のrefreshで表示される投稿数（デフォルト1→4）
+        refresh_rec_post_count=4,
+        # 推薦バッファの最大投稿数（デフォルト2→8）
+        max_rec_post_len=8,
+        # 自分の投稿に自分でいいね・低評価できないよう禁止
+        allow_self_rating=False,
+    )
     env = oasis.make(
         agent_graph=agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
+        platform=platform,
         database_path=db_path,
     )
     await env.reset()
     tracker_conn = init_tracker_db("sumika_tracker.db")
 
+    # ---------------------------------------------------------
+    # 初期フォロー関係の注入
+    # ---------------------------------------------------------
+    print("🔗 初期フォロー関係を設定中...")
+    follow_conn = sqlite3.connect(os.path.abspath(db_path))
+    follow_count = 0
+
+    for profile in profiles:
+        follower_id = profile["id"]
+        for followee_id in profile.get("initial_follows", []):
+            # 自己フォローはスキップ
+            if follower_id == followee_id:
+                continue
+            # 対象IDが存在するか確認
+            if not any(p["id"] == followee_id for p in profiles):
+                print(
+                    f"  ⚠️ initial_follows: ID={followee_id} は存在しません。スキップ。"
+                )
+                continue
+            try:
+                # followテーブルに挿入
+                follow_conn.execute(
+                    "INSERT OR IGNORE INTO follow (follower_id, followee_id, created_at) VALUES (?, ?, ?)",
+                    (follower_id, followee_id, 0),
+                )
+                # num_followings / num_followers を更新
+                follow_conn.execute(
+                    "UPDATE user SET num_followings = num_followings + 1 WHERE user_id = ?",
+                    (follower_id,),
+                )
+                follow_conn.execute(
+                    "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?",
+                    (followee_id,),
+                )
+                follow_conn.commit()
+                # AgentGraphにもエッジを追加（推薦システム用）
+                env.agent_graph.add_edge(follower_id, followee_id)
+                follow_count += 1
+            except Exception as e:
+                print(f"  ⚠️ フォロー設定失敗 ({follower_id}→{followee_id}): {e}")
+
+    follow_conn.close()
+    print(f"✅ 初期フォロー関係: {follow_count}件設定しました。")
+
     print("🤖: Twitter（X）シミュレーション開始！")
 
-    # 最初のきっかけ作り（ID:0 の住人に初投稿させる）
-    # seed_posts.jsonを読み込んで初期投稿を一括投稿
-    def load_seed_posts(file_path):
+    # ---------------------------------------------------------
+    # seed投稿・コメントを読み込んで投稿＋DB直接書き換えで初期値を注入
+    # ---------------------------------------------------------
+    def load_json_file(file_path):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
-            print(f"⚠️ シードファイル '{file_path}' が見つかりません。スキップします。")
+            print(f"⚠️ '{file_path}' が見つかりません。スキップします。")
             return []
 
-    seed_posts = load_seed_posts("seeds/seed_posts.json")
+    def load_all_from_folder(folder_path):
+        """フォルダ内のすべてのJSONファイルを読み込んでマージ"""
+        all_items = []
+        try:
+            if not os.path.isdir(folder_path):
+                print(f"⚠️ '{folder_path}' はディレクトリではありません。")
+                return []
 
-    for post in seed_posts:
-        author = env.agent_graph.get_agent(post["author_id"])
+            json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+            for json_file in sorted(json_files):
+                file_path = os.path.join(folder_path, json_file)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            all_items.extend(data)
+                        else:
+                            all_items.append(data)
+                    print(f"📄 '{json_file}' を読み込みました。")
+                except json.JSONDecodeError:
+                    print(
+                        f"⚠️ '{json_file}' のJSON形式が正しくありません。スキップします。"
+                    )
+        except Exception as e:
+            print(f"⚠️ フォルダ読み込みエラー: {e}")
+        return all_items
+
+    seed_posts = load_all_from_folder("seeds")
+    seed_comments = load_json_file("seeds/seed_comments.json")
+
+    # OASISのDBに直接アクセスするコネクション（いいね数などの上書き用）
+    oasis_conn = sqlite3.connect(os.path.abspath(db_path))
+
+    post_id_map = {}  # post_index → 実際のpost_id
+
+    for i, seed in enumerate(seed_posts):
+        author = env.agent_graph.get_agent(seed["author_id"])
         seed_action = {
             author: [
                 ManualAction(
                     action_type=ActionType.CREATE_POST,
-                    action_args={"content": post["content"]},
+                    action_args={"content": seed["content"]},
                 )
             ]
         }
+        executed_at = datetime.now().isoformat()
         await env.step(seed_action)
 
-    print(f"🌱 初期投稿 {len(seed_posts)} 件を投稿しました。")
+        post_id = i + 1
+        post_id_map[i] = post_id
+
+        # OASISのpostテーブルにいいね数・リポスト数を直接書き込む
+        try:
+            oasis_conn.execute(
+                "UPDATE post SET num_likes=?, num_shares=? WHERE post_id=?",
+                (
+                    seed.get("num_likes", 0),
+                    seed.get("num_reposts", 0),
+                    post_id,
+                ),
+            )
+            oasis_conn.commit()
+        except Exception as e:
+            print(f"  ⚠️ post初期値の書き込み失敗 (post_id={post_id}): {e}")
+
+        # action_logにseed投稿を記録
+        tr_cur = tracker_conn.cursor()
+        tr_cur.execute(
+            """
+            INSERT INTO action_log
+            (turn, agent_id, action_type, target_id, content, executed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                0,
+                seed["author_id"],
+                "create_post",
+                post_id,
+                json.dumps(
+                    {"post_id": post_id, "content": seed["content"]}, ensure_ascii=False
+                ),
+                executed_at,
+            ),
+        )
+        tracker_conn.commit()
+        print(f"  📝 seed投稿 {post_id}: {seed['content'][:30]}...")
+
+    # seed_commentsをOASISのcommentテーブルに直接INSERT
+    print(f"💬 seed_commentsを注入中 ({len(seed_comments)}件)...")
+    for sc in seed_comments:
+        post_index = sc.get("post_index", 0)
+        post_id = post_id_map.get(post_index)
+        if post_id is None:
+            print(
+                f"  ⚠️ post_index={post_index} に対応する投稿がありません。スキップ。"
+            )
+            continue
+        parent_comment_id = sc.get("parent_comment_id", None)
+        try:
+            oasis_conn.execute(
+                """
+                INSERT INTO comment
+                (post_id, parent_comment_id, user_id, content, num_likes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    post_id,
+                    parent_comment_id,
+                    sc["author_id"],
+                    sc["content"],
+                    sc.get("num_likes", 0),
+                    0,  # created_at=0（ターン0扱い）
+                ),
+            )
+            oasis_conn.commit()
+            reply_info = (
+                f" (→ comment_id={parent_comment_id}への返信)"
+                if parent_comment_id
+                else ""
+            )
+            print(
+                f"  💬 コメント追加{reply_info} → post_id={post_id}: {sc['content'][:30]}..."
+            )
+        except Exception as e:
+            print(f"  ⚠️ コメント追加失敗: {e}")
+
+    oasis_conn.close()
 
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)
@@ -228,9 +538,54 @@ async def main():
     simulation_rounds = 5
     for i in range(simulation_rounds):
         print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
-
         actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+
+        # ステップ前のtraceの最大IDを記録
+        tr_cur = tracker_conn.cursor()
+        oasis_cur = sqlite3.connect(os.path.abspath(db_path))
+        snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
+        before_max_id = snap[0] if snap[0] else 0
+
+        executed_at = datetime.now().isoformat()
         await env.step(actions)
+
+        # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
+        if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
+            print(f"  🧠 メモリ圧縮チェック中...")
+            for _, agent in env.agent_graph.get_agents():
+                await compress_agent_memory(
+                    agent,
+                    ollama_model,
+                    i + 1,
+                    threshold=MEMORY_COMPRESS_THRESHOLD,
+                    keep_recent=MEMORY_KEEP_RECENT,
+                )
+
+        # ステップ後に追加されたtraceを取得して独自DBに記録
+        new_rows = oasis_cur.execute(
+            "SELECT user_id, action, info, status FROM trace WHERE id > ?",
+            (before_max_id,),
+        ).fetchall()
+        oasis_cur.close()
+
+        for row in new_rows:
+            user_id, action, info, status = row
+            tr_cur.execute(
+                """
+                INSERT INTO action_log
+                (turn, agent_id, action_type, target_id, content, executed_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    i + 1,
+                    user_id,
+                    action,
+                    None,
+                    info,
+                    executed_at,
+                ),
+            )
+        tracker_conn.commit()
 
     print("✅ シミュレーション終了！")
     await env.close()
