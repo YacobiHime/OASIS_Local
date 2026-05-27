@@ -154,7 +154,7 @@ async def main():
 
     ollama_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type="gemma4:e4b",
+        model_type="joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
         url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
         api_key="ollama",  # エラー回避用のダミーキー
     )
