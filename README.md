@@ -32,7 +32,8 @@ Python 3.10 または 3.11 を使用し、以下の手順で環境を整えま�
 python -m venv .venv
 
 # 仮想環境の有効化
-.venv\Scripts\activate
+source .venv/bin/activate #linux
+.venv\Scripts\activate # powershell
 
 # 必須パッケージの導入
 pip install camel-oasis
