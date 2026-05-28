@@ -68,7 +68,6 @@ class SocialEnvironment(Environment):
     async def get_posts_env(self) -> str:
         posts = await self.action.refresh()
 
-        # ★ここが大改革ポイント！ JSONをパースして読みやすいテキストにするよ★
         if posts["success"]:
             formatted_posts = []
             post_list = posts.get("posts", [])
@@ -94,7 +93,7 @@ class SocialEnvironment(Environment):
                 )
 
                 # コメントがあれば追加
-                comments = post.get("comments", [])
+                comments = post.get("comments", [])[-3:]
                 if comments:
                     post_str += "\n   👇[コメント]"
                     for comment in comments:
