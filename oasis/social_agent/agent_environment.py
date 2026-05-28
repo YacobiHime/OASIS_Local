@@ -54,12 +54,7 @@ class SocialEnvironment(Environment):
         "$followers_env\n"
         "$follows_env\n"
         "$groups_env\n"
-        "$posts_env\n\n"
-        "【指示】\n"
-        "上記の状況を見て、あなたのプロフィールや性格に基づき、自然なアクションを選んで実行してください。\n"
-        "- 言いたいことがあればcreate_postで投稿してください。毎ターン投稿する必要はありませんが、何ターンも投稿しないのは不自然です。\n"
-        "- タイムラインの投稿にはlike_postやcreate_commentで積極的に反応してください。\n"
-        "- 特に何もない場合はdo_nothingでも構いませんが、連続して使いすぎないようにしてください。"
+        "$posts_env\n"
     )
 
     def __init__(self, action: SocialAction):
@@ -68,6 +63,7 @@ class SocialEnvironment(Environment):
     async def get_posts_env(self) -> str:
         posts = await self.action.refresh()
 
+        # ★ここが大改革ポイント！ JSONをパースして読みやすいテキストにするよ★
         if posts["success"]:
             formatted_posts = []
             post_list = posts.get("posts", [])
@@ -93,7 +89,7 @@ class SocialEnvironment(Environment):
                 )
 
                 # コメントがあれば追加
-                comments = post.get("comments", [])[-3:]
+                comments = post.get("comments", [])
                 if comments:
                     post_str += "\n   👇[コメント]"
                     for comment in comments:

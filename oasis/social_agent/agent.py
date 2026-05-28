@@ -135,16 +135,7 @@ class SocialAgent(ChatAgent):
         env_prompt = await self.env.to_text_prompt()
         user_msg = BaseMessage.make_user_message(
             role_name="User",
-            content=(
-                f"プラットフォームの状況を観察し、ソーシャルメディア上のアクションを行ってください。\n"
-                f"【行動ルール】\n"
-                f"1. 自分のキャラクターとして自然に行動してください。\n"
-                f"2. 言いたいことがあればcreate_postで投稿してください（1ターンに1件程度が自然です）。毎ターン投稿する必要はありませんが、何ターンも投稿しないのは不自然です。\n"
-                f"3. タイムラインに気になる投稿があれば、like_postやcreate_commentで反応してください。\n"
-                f"4. 特に何もない場合はdo_nothingを選んでも構いません。ただし連続して使いすぎないようにしてください。\n"
-                f"5. 投稿・コメントは140字以内にしてください。\n"
-                f"現在の環境情報: {env_prompt}"
-            ),
+            content=f"現在の環境情報:\n{env_prompt}",
         )
         try:
             agent_log.info(
