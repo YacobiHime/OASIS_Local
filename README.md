@@ -84,9 +84,10 @@ $env:PYTHONUTF8 = "1"
 ```powershell
 # 標準設定（profiles/test.json を使用）
 python sumika.py
+python sumika.py --turns 50
 
-# 設定ファイルを指定して実行する場合
-python sumika.py --profiles profiles/test1.json
+# ssh接続で仮想マシンを使う場合
+nohup python sumika.py --turns 15 > oasis.log 2>&1 &
 ```
 
 実行すると、エージェントたちが初期の投稿に対して反応したり、自身の関心に基づいて新しい投稿を行ったりします。

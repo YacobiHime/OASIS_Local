@@ -233,7 +233,13 @@ async def main():
         type=str,
         default="profiles",
         help="Path to the user profiles folder",
-    )
+        )
+    parser.add_argument(
+        "--turns",
+        type=int,
+        default=5,
+        help="シミュレーションのターン数",
+        )
     args = parser.parse_args()
 
     # プロファイルをロード
@@ -248,11 +254,6 @@ async def main():
         model_type="joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
         url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
         api_key="ollama",  # エラー回避用のダミーキー
-    )
-    # 複数のエージェントでこのモデルを共有するための設定
-    shared_model_manager = ModelManager(
-        models=[ollama_model],
-        scheduling_strategy="round_robin",
     )
 
     # ollama_model = ModelFactory.create(
@@ -308,10 +309,9 @@ async def main():
             agent_id=profile["id"],
             user_info=user_info,
             agent_graph=agent_graph,
-            model=shared_model_manager,
+            model=ollama_model,
             available_actions=available_actions,
-            message_window_size=10,  # 直近10件のみ保持してコンテキスト膨張を防ぐ
-        )
+            )
 
         agent_graph.add_agent(agent)
         print(f"✨ {profile['name']} さんが入居しました！(ID: {profile['id']})")
@@ -535,7 +535,7 @@ async def main():
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)
     # ---------------------------------------------------------
-    simulation_rounds = 5
+    simulation_rounds = args.turns
     for i in range(simulation_rounds):
         print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
         actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
