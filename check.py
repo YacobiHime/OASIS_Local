@@ -206,13 +206,36 @@ def get_timeline_text(conn, tracker_conn=None):
 
                 if not post_comments.empty:
                     text += "   ┄" * 20 + "\n"
-                    for c_idx, c_row in post_comments.iterrows():
+
+                    # comment_idをキーにした辞書を作成
+                    comments_dict = {
+                        int(c_row.get("comment_id")): c_row
+                        for _, c_row in post_comments.iterrows()
+                        if c_row.get("comment_id") is not None
+                    }
+
+                    # ツリー表示用の再帰関数
+                    def render_comment(c_row, depth=0):
+                        indent = "   " + "   " * depth
+                        prefix = "├─" if depth == 0 else "└─"
                         c_imp = comment_impression_count.get(c_row.get("comment_id"), 0)
                         c_time_str = format_time(
                             c_row.get("created_at", 0), turn_to_time, MINUTES_PER_TURN
                         )
-                        text += f"   ├─ ⏰{c_time_str} 👤{uid_to_name(c_row.get('user_id'))} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
-                        text += f"   │  {c_row.get('content','')}\n"
+                        result = f"{indent}{prefix} ⏰{c_time_str} 👤{uid_to_name(c_row.get('user_id'))} ❤️{c_row.get('num_likes',0)}  👁️{c_imp}\n"
+                        result += f"{indent}│  {c_row.get('content','')}\n"
+                        # 子コメントを再帰表示
+                        c_id = c_row.get("comment_id")
+                        for _, child in post_comments.iterrows():
+                            if child.get("parent_comment_id") == c_id:
+                                result += render_comment(child, depth + 1)
+                        return result
+
+                    # ルートコメント（parent_comment_idがNullのもの）から表示
+                    for _, c_row in post_comments.iterrows():
+                        parent = c_row.get("parent_comment_id")
+                        if parent is None or str(parent) == "nan":
+                            text += render_comment(c_row, depth=0)
 
             text += "═" * 60 + "\n"
     except Exception as e:
