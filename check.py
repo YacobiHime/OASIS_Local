@@ -97,7 +97,53 @@ def format_time(turn, turn_to_time, minutes_per_turn=5):
 
 
 # 1ターン何分に相当するか（ここを変更すると投稿間の時間間隔が変わる）
-MINUTES_PER_TURN = 5
+MINUTES_PER_TURN = 300
+
+
+def get_turn_stats_text(conn):
+    import math
+    try:
+        rows = conn.execute(
+            "SELECT turn, elapsed_sec, started_at, finished_at FROM turn_stats ORDER BY turn"
+        ).fetchall()
+    except Exception:
+        return "（ターン統計データなし）\n"
+
+    if not rows:
+        return "（ターン統計データなし）\n"
+
+    times = [r[1] for r in rows]
+    n = len(times)
+    total = sum(times)
+    avg = total / n
+    mn = min(times)
+    mx = max(times)
+    variance = sum((t - avg) ** 2 for t in times) / n
+    std = math.sqrt(variance)
+
+    # 最速・最遅ターン
+    fastest_turn = rows[times.index(mn)][0]
+    slowest_turn = rows[times.index(mx)][0]
+
+    # 開始・終了時刻
+    started_at = rows[0][2]
+    finished_at = rows[-1][3]
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append("⏱️  【実行時間統計】")
+    lines.append("=" * 60)
+    lines.append(f"  シミュレーション開始 : {started_at}")
+    lines.append(f"  シミュレーション終了 : {finished_at}")
+    lines.append(f"  実行ターン数         : {n} ターン")
+    lines.append(f"  合計時間             : {int(total//3600)}時間 {int((total%3600)//60)}分 {total%60:.1f}秒  ({total:.1f}秒)")
+    lines.append(f"  平均時間 / ターン    : {avg:.1f}秒")
+    lines.append(f"  最小時間             : {mn:.1f}秒  (ターン {fastest_turn})")
+    lines.append(f"  最大時間             : {mx:.1f}秒  (ターン {slowest_turn})")
+    lines.append(f"  標準偏差             : {std:.1f}秒")
+    lines.append("=" * 60)
+
+    return "\n".join(lines) + "\n"
 
 
 def get_timeline_text(conn, tracker_conn=None):
@@ -455,11 +501,12 @@ def show_and_save_results():
     timeline_text = get_timeline_text(conn, tracker_conn=conn)
     action_text = get_action_log_text(conn)
     impression_text = get_impression_text(conn)
+    turn_stats_text = get_turn_stats_text(conn)
     conn.close()
 
     full_log_text = (
-        timeline_text + "\n" + action_text + "\n" + impression_text
-    )  # ★impression_text追加
+        turn_stats_text + "\n" + timeline_text + "\n" + action_text + "\n" + impression_text
+    )
 
     if ENABLE_SUMMARY:
         summary = generate_summary(full_log_text)

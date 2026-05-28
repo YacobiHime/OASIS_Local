@@ -51,6 +51,14 @@ def init_tracker_db(db_path):
             executed_at TEXT
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS turn_stats (
+            turn          INTEGER PRIMARY KEY,
+            elapsed_sec   REAL,
+            started_at    TEXT,
+            finished_at   TEXT
+        )
+    """)
     conn.commit()
     return conn
 
@@ -546,8 +554,18 @@ async def main():
         snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
         before_max_id = snap[0] if snap[0] else 0
 
-        executed_at = datetime.now().isoformat()
+        turn_started_at = datetime.now()
+        executed_at = turn_started_at.isoformat()
         await env.step(actions)
+        turn_finished_at = datetime.now()
+        elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
+        print(f"  ⏱️ ターン {i + 1} 完了: {elapsed_sec:.1f}秒")
+
+        tr_cur.execute(
+            "INSERT OR REPLACE INTO turn_stats (turn, elapsed_sec, started_at, finished_at) VALUES (?, ?, ?, ?)",
+            (i + 1, elapsed_sec, turn_started_at.isoformat(), turn_finished_at.isoformat()),
+        )
+        tracker_conn.commit()
 
         # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
         if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
