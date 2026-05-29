@@ -89,6 +89,7 @@ docker-compose.override.yml
 
 # Logs
 *.log
+log/
 
 # Models
 models/
@@ -104,3 +105,10 @@ tmp
 result_data/
 *.db
 *.log
+
+# --- Weights & Biases ---
+wandb/
+
+# --- Backup files ---
+*.backup
+*.bak

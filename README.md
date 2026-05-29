@@ -41,6 +41,12 @@ pip install camel-oasis
 
 **※重要**: `camel-ai[all]` などの余計なパッケージを導入するとエラーの原因となります。必ず `camel-oasis` のみを導入してください。
 
+（オプション）実験の追跡を行う場合は、以下も導入してください：
+
+```powershell
+pip install wandb
+```
+
 ## ファイル構成
 
 * **実行プログラム**
@@ -89,6 +95,9 @@ python sumika.py --turns 50
 
 # ssh接続で仮想マシンを使う場合
 nohup python sumika.py --turns 15 > oasis.log 2>&1 &
+
+# W&Bによる実験追跡を無効化する場合
+python sumika.py --turns 50 --no-wandb
 ```
 
 実行すると、エージェントたちが初期の投稿に対して反応したり、自身の関心に基づいて新しい投稿を行ったりします。
