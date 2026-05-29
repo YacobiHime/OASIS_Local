@@ -14,6 +14,8 @@ from oasis import ActionType, LLMAction, ManualAction, AgentGraph, SocialAgent, 
 from oasis.social_platform.platform import Platform
 from oasis.clock.clock import Clock
 
+import wandb
+
 
 def init_tracker_db(db_path):
     conn = sqlite3.connect(db_path)
@@ -260,10 +262,41 @@ async def main():
         default=5,
         help="シミュレーションのターン数",
         )
+    parser.add_argument(
+        "--no-wandb",
+        action="store_true",
+        help="Weights & Biasesを無効化",
+        )
     args = parser.parse_args()
 
     # プロファイルをロード
     profiles = load_profiles(args.profiles)
+
+    # ---------------------------------------------------------
+    # Weights & Biases の初期化
+    # ---------------------------------------------------------
+    wandb_enabled = not args.no_wandb
+    if wandb_enabled:
+        try:
+            wandb.init(
+                project="oasis-simulation",
+                name=f"sim-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                config={
+                    "num_agents": len(profiles),
+                    "num_turns": args.turns,
+                    "model": "Gemma-4-Uncensored-HauhauCS-Aggressive",
+                    "memory_compress_threshold": MEMORY_COMPRESS_THRESHOLD,
+                    "memory_keep_recent": MEMORY_KEEP_RECENT,
+                    "memory_compress_interval": MEMORY_COMPRESS_INTERVAL,
+                },
+            )
+            print(f"📊 W&B初期化完了: {wandb.run.name}")
+        except Exception as e:
+            print(f"⚠️ W&B初期化に失敗: {e}")
+            print("  → W&Bなしで継続します")
+            wandb_enabled = False
+    else:
+        print("📊 W&Bは無効化されています")
 
     # ---------------------------------------------------------
     # 1. モデル設定
@@ -655,7 +688,58 @@ async def main():
             except:
                 pass
 
+        # ---------------------------------------------------------
+        # W&Bにターン統計をログ
+        # ---------------------------------------------------------
+        if wandb_enabled:
+            try:
+                # アクションカウントを収集
+                action_counts = {}
+                for row in new_rows:
+                    action = row[1]
+                    action_counts[action] = action_counts.get(action, 0) + 1
+
+                # データベースから追加の統計を収集
+                stats_conn = sqlite3.connect(os.path.abspath(db_path))
+                try:
+                    # 投稿数、いいね数などの統計
+                    total_posts = stats_conn.execute("SELECT COUNT(*) FROM post").fetchone()[0]
+                    total_likes = stats_conn.execute("SELECT SUM(num_likes) FROM post").fetchone()[0] or 0
+                    total_comments = stats_conn.execute("SELECT COUNT(*) FROM comment").fetchone()[0]
+
+                    # フォロー数の統計
+                    total_follows = stats_conn.execute("SELECT COUNT(*) FROM follow").fetchone()[0]
+                except Exception as e:
+                    print(f"  ⚠️ 統計取得エラー: {e}")
+                    total_posts = total_likes = total_comments = total_follows = 0
+                finally:
+                    stats_conn.close()
+
+                # W&Bにログ
+                wandb.log({
+                    "turn": i + 1,
+                    "elapsed_sec": elapsed_sec,
+                    "total_posts": total_posts,
+                    "total_likes": total_likes,
+                    "total_comments": total_comments,
+                    "total_follows": total_follows,
+                    **{f"action_{k}": v for k, v in action_counts.items()},
+                })
+            except Exception as e:
+                print(f"  ⚠️ W&Bログエラー: {e}")
+
     print("✅ シミュレーション終了！")
+
+    # ---------------------------------------------------------
+    # W&Bの終了処理
+    # ---------------------------------------------------------
+    if wandb_enabled:
+        try:
+            wandb.finish()
+            print("📊 W&Bログ完了")
+        except Exception as e:
+            print(f"⚠️ W&B終了エラー: {e}")
+
     await env.close()
     tracker_conn.close()
 
