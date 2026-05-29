@@ -715,10 +715,13 @@ async def main():
                 finally:
                     stats_conn.close()
 
+                # デバッグ: ログ内容を確認
+                print(f"  📊 W&Bログ: turn={i + 1}, posts={total_posts}, likes={total_likes}, actions={action_counts}")
+
                 # W&Bにログ
                 wandb.log({
                     "turn": i + 1,
-                    "elapsed_sec": elapsed_sec,
+                    "elapsed_sec": elapsed_sec if 'elapsed_sec' in locals() else 0,
                     "total_posts": total_posts,
                     "total_likes": total_likes,
                     "total_comments": total_comments,
@@ -727,6 +730,8 @@ async def main():
                 })
             except Exception as e:
                 print(f"  ⚠️ W&Bログエラー: {e}")
+                import traceback
+                traceback.print_exc()
 
     print("✅ シミュレーション終了！")
 
