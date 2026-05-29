@@ -14,8 +14,13 @@ from camel.messages import BaseMessage
 # sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
-db_path = "./ollama_twitter.db"
-tracker_db_path = "./sumika_tracker.db"
+# ---------------------------------------------------------
+# 設定ファイルの読み込み
+# ---------------------------------------------------------
+with open("config.json", "r", encoding="utf-8") as _f:
+    _cfg = json.load(_f)
+db_path = _cfg["db_path"]
+tracker_db_path = _cfg["tracker_db_path"]
 ENABLE_SUMMARY = False  # ★ Falseにすると要約をスキップ
 
 
@@ -398,9 +403,9 @@ def generate_summary(log_text):
     try:
         ollama_model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
-            model_type="gemma4:e4b",
-            url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
-            api_key="ollama",  # エラー回避用のダミーキー
+            model_type=_cfg["ollama_model_check"],
+            url=_cfg["ollama_url"],
+            api_key="ollama",
         )
 
         prompt = f"""
@@ -436,7 +441,7 @@ def generate_summary(log_text):
 
 
 def merge_databases():
-    """ollama_twitter.dbのデータをsumika_tracker.dbにミラーコピーする"""
+    """ollama_twitter.dbのデータをsumika_tracker.dbにミラーコピーする（差分更新）"""
     if not os.path.exists(db_path):
         print(f"⚠️ {db_path} が見つかりません。スキップします。")
         return
@@ -450,9 +455,6 @@ def merge_databases():
     for table in tables:
         mirror = f"mirror_{table}"
         try:
-            # 既存のミラーテーブルを削除して再作成
-            dst_cur.execute(f"DROP TABLE IF EXISTS {mirror}")
-
             # ソーステーブルの構造を取得
             src_cur = src.execute(f"PRAGMA table_info({table})")
             columns = src_cur.fetchall()
@@ -460,20 +462,19 @@ def merge_databases():
                 continue
 
             col_defs = ", ".join(f"{col[1]} {col[2]}" for col in columns)
-            dst_cur.execute(f"CREATE TABLE {mirror} ({col_defs})")
+            dst_cur.execute(f"CREATE TABLE IF NOT EXISTS {mirror} ({col_defs})")
 
-            # データをコピー
+            pk_col = columns[0][1]
+            existing_ids = {r[0] for r in dst_cur.execute(f"SELECT {pk_col} FROM {mirror}").fetchall()}
             rows = src.execute(f"SELECT * FROM {table}").fetchall()
-            if rows:
+            new_rows = [r for r in rows if r[0] not in existing_ids]
+            if new_rows:
                 placeholders = ", ".join("?" * len(columns))
-                dst_cur.executemany(
-                    f"INSERT INTO {mirror} VALUES ({placeholders})", rows
-                )
-
+                dst_cur.executemany(f"INSERT OR IGNORE INTO {mirror} VALUES ({placeholders})", new_rows)
             dst.commit()
-            print(f"  ✅ {mirror}: {len(rows)}件コピー")
+            print(f"  ✅ {mirror}: {len(new_rows)}件追加（合計{len(rows)}件）")
         except Exception as e:
-            print(f"  ⚠️ {mirror} のコピー失敗: {e}")
+            print(f"  ⚠️ {mirror} のマージ失敗: {e}")
 
     src.close()
     dst.close()

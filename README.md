@@ -9,18 +9,21 @@
 * **Python**: 3.10 または 3.11
 * **パッケージ管理**: pip (Python標準)
 * **LLMバックエンド**: Ollama
-* **モデル**: `gemma4:e2b` (標準設定)
-* ※ `sumika.py` と `check.py` でこのモデル名が指定されています。環境に合わせてコード内のモデル名を変更しても動作します。
+* **モデル**: `config.json` で指定（デフォルト: `joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b`）
+* ※ 設定は `config.json` で一元管理されています。環境に合わせて変更してください。
 
 ## 事前準備
 
 ### 1. Ollamaの準備とモデルの取得
 
 Ollamaが導入され、起動している必要があります。
-PowerShellで以下のコマンドを実行し、モデルを取得します（またはコード内のモデル名を既存のモデルに変更してください）。
+`config.json` で指定したモデルを取得してください。
 
 ```powershell
-ollama pull gemma4:e2b
+# デフォルト設定の場合
+ollama pull joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b
+
+# または別のモデルを使用する場合、config.json を編集してください
 ```
 
 ### 2. Python環境の構築
@@ -61,17 +64,20 @@ pip install wandb
 * タイムラインを階層状に表示します。
 * LLMを使用して「何が起きたか」の要約報告書を自動生成します。
 * 実行結果を `result_data/` フォルダに自動保存します。
+* **差分更新機能**: 2回目以降の実行では、新しいデータのみが追加されます（全件コピーではなく）。
 
 * **Blueskyデータ収集ツール**（実データを使ったシミュレーション用）
 * `collect_bluesky.py`: BlueskyのJetstreamから日本語ユーザーの投稿・プロフィールを収集し、`raw_users.json` に保存します。
 * `make_gemini_prompt.py`: `raw_users.json` を読み込み、GeminiチャットにコピペするだけでOASIS用ペルソナ・seed投稿を生成できるプロンプトを `gemini_prompt.txt` に出力します。
 
 * **データ・設定**
+* `config.json`: **シミュレーションの設定ファイル**（Ollama URL、モデル名、DBパスなどを指定）。
 * `profiles/`: エージェントの属性情報を格納するフォルダ（例: `test1.json`, `bluesky_profiles.json`）。
 * `seeds/`: シミュレーション開始時の初期投稿を格納するフォルダ（例: `seed_posts.json`, `bluesky_seeds.json`）。
 * `raw_users.json`: `collect_bluesky.py` で収集したBlueskyユーザーの生データ。
 * `gemini_prompt.txt`: `make_gemini_prompt.py` で生成したGeminiへの入力プロンプト。
 * `ollama_twitter.db`: シミュレーション結果が保存されるデータベース。
+* `sumika_tracker.db`: シミュレーションの追跡データ（ターン統計、行動ログ）。
 * `result_data/`: `check.py` で出力された記録ファイルの保存先。
 
 ## 実行方法
@@ -89,8 +95,10 @@ $env:PYTHONUTF8 = "1"
 以下のコマンドでシミュレーションを開始します。
 
 ```powershell
-# 標準設定（profiles/test.json を使用）
+# 標準設定（5ターン実行）
 python sumika.py
+
+# ターン数を指定
 python sumika.py --turns 50
 
 # ssh接続で仮想マシンを使う場合
@@ -98,7 +106,16 @@ nohup python sumika.py --turns 15 > oasis.log 2>&1 &
 
 # W&Bによる実験追跡を無効化する場合
 python sumika.py --turns 50 --no-wandb
+
+# 既存のDBを引き継いで再開する場合（resumeモード）
+python sumika.py --turns 10 --resume
 ```
+
+**主な機能:**
+- **タイムアウト保護**: LLM応答が遅い場合、5分でタイムアウトして次の処理に進みます
+- **メモリ圧縮**: エージェントの記憶が一定量を超えると自動的に要約・圧縮されます（並列処理で高速化）
+- **Ctrl+C対応**: 中断時もDB接続が正しくクローズされます
+- **差分更新**: `check.py` 実行時にDBがマージされ、既存データが引き継がれます
 
 実行すると、エージェントたちが初期の投稿に対して反応したり、自身の関心に基づいて新しい投稿を行ったりします。
 
@@ -168,13 +185,21 @@ mkdir seeds
 
 ### 4. Blueskyデータでシミュレーションを実行する
 
-`sumika.py` の seed 読み込みパスを `seeds/bluesky_seeds.json` に変更した上で実行します:
+`sumika.py` は `seeds/` フォルダ内のすべてのJSONファイルを自動的に読み込みます。
 
 ```powershell
-python sumika.py --profiles profiles/bluesky_profiles.json
+# profilesフォルダとseedsフォルダにデータを配置後
+python sumika.py --turns 50
 ```
 
-> **注意**: `sumika.py` 内の `seed_posts.json` の参照箇所を `bluesky_seeds.json` に書き換えてください。
+**配置例:**
+```
+profiles/
+  └── bluesky_profiles.json  ← エージェント属性
+seeds/
+  ├── bluesky_seeds.json      ← 初期投稿
+  └── seed_comments.json      ← 初期コメント
+```
 
 ---
 
