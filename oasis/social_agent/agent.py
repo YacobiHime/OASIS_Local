@@ -145,38 +145,46 @@ class SocialAgent(ChatAgent):
 
             # ★修正1: ループ内のreturnを削除し、全tool_callを処理してからreturnする
             for tool_call in response.info.get("tool_calls") or []:
-                action_name = tool_call.tool_name
-                args = tool_call.args
+                try:
+                    action_name = tool_call.tool_name
+                    args = tool_call.args
 
-                # ★自己フォロー/自己アンフォロー防止
-                if action_name in ("follow", "unfollow"):
-                    followee_id = args.get("followee_id")
-                    if (
-                        followee_id is not None
-                        and int(followee_id) == self.social_agent_id
-                    ):
-                        agent_log.warning(
-                            f"Agent {self.social_agent_id} tried to "
-                            f"{action_name} themselves. Skipped."
-                        )
-                        continue
+                    # ★自己フォロー/自己アンフォロー防止
+                    if action_name in ("follow", "unfollow"):
+                        followee_id = args.get("followee_id")
+                        if (
+                            followee_id is not None
+                            and int(followee_id) == self.social_agent_id
+                        ):
+                            agent_log.warning(
+                                f"Agent {self.social_agent_id} tried to "
+                                f"{action_name} themselves. Skipped."
+                            )
+                            continue
 
-                agent_log.info(
-                    f"Agent {self.social_agent_id} performed "
-                    f"action: {action_name} with args: {args}"
-                )
-                if action_name not in ALL_SOCIAL_ACTIONS:
                     agent_log.info(
-                        f"Agent {self.social_agent_id} get the result: "
-                        f"{tool_call.result}"
+                        f"Agent {self.social_agent_id} performed "
+                        f"action: {action_name} with args: {args}"
                     )
-                # ★修正2: コメントアウトを外してフォロー/アンフォローをAgentGraphに反映する
-                self.perform_agent_graph_action(action_name, args)
+                    if action_name not in ALL_SOCIAL_ACTIONS:
+                        agent_log.info(
+                            f"Agent {self.social_agent_id} get the result: "
+                            f"{tool_call.result}"
+                        )
+                    # ★修正2: コメントアウトを外してフォロー/アンフォローをAgentGraphに反映する
+                    self.perform_agent_graph_action(action_name, args)
+                except Exception as e:
+                    # 個別のツール呼び出しが失敗しても、他のツール呼び出しを続行
+                    agent_log.warning(
+                        f"Agent {self.social_agent_id} tool_call failed: {e}"
+                    )
+                    continue
 
             return response
         except Exception as e:
             agent_log.error(f"Agent {self.social_agent_id} error: {e}")
-            return e
+            # エラーが発生してもNoneを返してシミュレーション続行
+            return None
 
     async def perform_test(self):
         """

@@ -51,14 +51,6 @@ def init_tracker_db(db_path):
             executed_at TEXT
         )
     """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS turn_stats (
-            turn          INTEGER PRIMARY KEY,
-            elapsed_sec   REAL,
-            started_at    TEXT,
-            finished_at   TEXT
-        )
-    """)
     conn.commit()
     return conn
 
@@ -401,17 +393,12 @@ async def main():
                     "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?",
                     (followee_id,),
                 )
+                follow_conn.commit()
                 # AgentGraphにもエッジを追加（推薦システム用）
                 env.agent_graph.add_edge(follower_id, followee_id)
                 follow_count += 1
             except Exception as e:
                 print(f"  ⚠️ フォロー設定失敗 ({follower_id}→{followee_id}): {e}")
-
-    # コミットはループ外で1回だけ
-    try:
-        follow_conn.commit()
-    except Exception as e:
-        print(f"  ⚠️ フォロー関係のコミットに失敗: {e}")
 
     follow_conn.close()
     print(f"✅ 初期フォロー関係: {follow_count}件設定しました。")
@@ -571,32 +558,15 @@ async def main():
         snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
         before_max_id = snap[0] if snap[0] else 0
 
-        # ★ターン時間の計測
-        turn_started_at = datetime.now()
-        executed_at = turn_started_at.isoformat()
+        executed_at = datetime.now().isoformat()
 
         # ★メインステップ: env.step()を保護
         try:
             await env.step(actions)
-            turn_finished_at = datetime.now()
-            elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
-            print(f"  ⏱️ ターン {i + 1} 完了: {elapsed_sec:.1f}秒")
-
-            # turn_statsに記録
-            try:
-                tr_cur.execute(
-                    "INSERT OR REPLACE INTO turn_stats (turn, elapsed_sec, started_at, finished_at) VALUES (?, ?, ?, ?)",
-                    (i + 1, elapsed_sec, turn_started_at.isoformat(), turn_finished_at.isoformat()),
-                )
-                tracker_conn.commit()
-            except Exception as e:
-                print(f"  ⚠️ ターン統計記録エラー: {e}")
         except Exception as e:
             print(f"  ⚠️ ターン{i + 1}: ステップ実行中にエラーが発生しました: {e}")
             print(f"  → 次の処理に進みます...")
             # エラーが発生しても、可能な限り次の処理を続行
-            turn_finished_at = datetime.now()
-            elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
 
         # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
         if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
@@ -615,45 +585,30 @@ async def main():
                     # メモリ圧縮の失敗はシミュレーション続行
 
         # ステップ後に追加されたtraceを取得して独自DBに記録
-        try:
-            new_rows = oasis_cur.execute(
-                "SELECT user_id, action, info, status FROM trace WHERE id > ?",
-                (before_max_id,),
-            ).fetchall()
-        except Exception as e:
-            print(f"  ⚠️ トレース取得エラー: {e}")
-            new_rows = []
+        new_rows = oasis_cur.execute(
+            "SELECT user_id, action, info, status FROM trace WHERE id > ?",
+            (before_max_id,),
+        ).fetchall()
+        oasis_cur.close()
 
-        try:
-            for row in new_rows:
-                user_id, action, info, status = row
-                try:
-                    tr_cur.execute(
-                        """
-                        INSERT INTO action_log
-                        (turn, agent_id, action_type, target_id, content, executed_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            i + 1,
-                            user_id,
-                            action,
-                            None,
-                            info,
-                            executed_at,
-                        ),
-                    )
-                except Exception as e:
-                    print(f"  ⚠️ ログ記録エラー (user_id={user_id}): {e}")
-
-            tracker_conn.commit()
-        except Exception as e:
-            print(f"  ⚠️ コミットエラー: {e}")
-        finally:
-            try:
-                oasis_cur.close()
-            except:
-                pass
+        for row in new_rows:
+            user_id, action, info, status = row
+            tr_cur.execute(
+                """
+                INSERT INTO action_log
+                (turn, agent_id, action_type, target_id, content, executed_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    i + 1,
+                    user_id,
+                    action,
+                    None,
+                    info,
+                    executed_at,
+                ),
+            )
+        tracker_conn.commit()
 
     print("✅ シミュレーション終了！")
     await env.close()
