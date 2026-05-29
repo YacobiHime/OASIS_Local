@@ -740,14 +740,13 @@ async def main():
 
                     # W&Bにログ
                     wandb.log({
-                        "turn": i + 1,
                         "elapsed_sec": elapsed_sec if 'elapsed_sec' in locals() else 0,
                         "total_posts": total_posts,
                         "total_likes": total_likes,
                         "total_comments": total_comments,
                         "total_follows": total_follows,
                         **{f"action_{k}": v for k, v in action_counts.items()},
-                    })
+                    }, step=i + 1)
                 except Exception as e:
                     print(f"  ⚠️ W&Bログエラー: {e}")
                     import traceback
