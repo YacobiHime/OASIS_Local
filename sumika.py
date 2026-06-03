@@ -130,7 +130,7 @@ def load_profiles(folder_path):
                 print(
                     f"⚠️ '{json_file}' のJSON形式が正しくありません。スキップします。"
                 )
-                
+
         # 元のプロファイルJSONのIDを維持する（initial_followsの参照を正しくするため）
         # IDが重複している場合のみ、連番を割り当てる
         seen_ids = set()
@@ -255,18 +255,18 @@ async def main():
         type=str,
         default="profiles",
         help="Path to the user profiles folder",
-        )
+    )
     parser.add_argument(
         "--turns",
         type=int,
         default=5,
         help="シミュレーションのターン数",
-        )
+    )
     parser.add_argument(
         "--no-wandb",
         action="store_true",
         help="Weights & Biasesを無効化",
-        )
+    )
     args = parser.parse_args()
 
     # プロファイルをロード
@@ -304,10 +304,12 @@ async def main():
 
     ollama_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type="joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
+        model_type="VladimirGav/gemma4-26b-16GB-VRAM-Uncensored",
         url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
         api_key="ollama",  # エラー回避用のダミーキー
     )
+
+    # "joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b"
 
     # ollama_model = ModelFactory.create(
     # model_platform=ModelPlatformType.OPENAI,
@@ -364,7 +366,7 @@ async def main():
             agent_graph=agent_graph,
             model=ollama_model,
             available_actions=available_actions,
-            )
+        )
 
         agent_graph.add_agent(agent)
         print(f"✨ {profile['name']} さんが入居しました！(ID: {profile['id']})")
@@ -619,7 +621,12 @@ async def main():
             try:
                 tr_cur.execute(
                     "INSERT OR REPLACE INTO turn_stats (turn, elapsed_sec, started_at, finished_at) VALUES (?, ?, ?, ?)",
-                    (i + 1, elapsed_sec, turn_started_at.isoformat(), turn_finished_at.isoformat()),
+                    (
+                        i + 1,
+                        elapsed_sec,
+                        turn_started_at.isoformat(),
+                        turn_finished_at.isoformat(),
+                    ),
                 )
                 tracker_conn.commit()
             except Exception as e:
@@ -703,12 +710,23 @@ async def main():
                 stats_conn = sqlite3.connect(os.path.abspath(db_path))
                 try:
                     # 投稿数、いいね数などの統計
-                    total_posts = stats_conn.execute("SELECT COUNT(*) FROM post").fetchone()[0]
-                    total_likes = stats_conn.execute("SELECT SUM(num_likes) FROM post").fetchone()[0] or 0
-                    total_comments = stats_conn.execute("SELECT COUNT(*) FROM comment").fetchone()[0]
+                    total_posts = stats_conn.execute(
+                        "SELECT COUNT(*) FROM post"
+                    ).fetchone()[0]
+                    total_likes = (
+                        stats_conn.execute(
+                            "SELECT SUM(num_likes) FROM post"
+                        ).fetchone()[0]
+                        or 0
+                    )
+                    total_comments = stats_conn.execute(
+                        "SELECT COUNT(*) FROM comment"
+                    ).fetchone()[0]
 
                     # フォロー数の統計
-                    total_follows = stats_conn.execute("SELECT COUNT(*) FROM follow").fetchone()[0]
+                    total_follows = stats_conn.execute(
+                        "SELECT COUNT(*) FROM follow"
+                    ).fetchone()[0]
                 except Exception as e:
                     print(f"  ⚠️ 統計取得エラー: {e}")
                     total_posts = total_likes = total_comments = total_follows = 0
@@ -716,21 +734,26 @@ async def main():
                     stats_conn.close()
 
                 # デバッグ: ログ内容を確認
-                print(f"  📊 W&Bログ: turn={i + 1}, posts={total_posts}, likes={total_likes}, actions={action_counts}")
+                print(
+                    f"  📊 W&Bログ: turn={i + 1}, posts={total_posts}, likes={total_likes}, actions={action_counts}"
+                )
 
                 # W&Bにログ
-                wandb.log({
-                    "turn": i + 1,
-                    "elapsed_sec": elapsed_sec if 'elapsed_sec' in locals() else 0,
-                    "total_posts": total_posts,
-                    "total_likes": total_likes,
-                    "total_comments": total_comments,
-                    "total_follows": total_follows,
-                    **{f"action_{k}": v for k, v in action_counts.items()},
-                })
+                wandb.log(
+                    {
+                        "turn": i + 1,
+                        "elapsed_sec": elapsed_sec if "elapsed_sec" in locals() else 0,
+                        "total_posts": total_posts,
+                        "total_likes": total_likes,
+                        "total_comments": total_comments,
+                        "total_follows": total_follows,
+                        **{f"action_{k}": v for k, v in action_counts.items()},
+                    }
+                )
             except Exception as e:
                 print(f"  ⚠️ W&Bログエラー: {e}")
                 import traceback
+
                 traceback.print_exc()
 
     print("✅ シミュレーション終了！")
