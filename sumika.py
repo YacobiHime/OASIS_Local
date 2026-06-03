@@ -620,35 +620,42 @@ async def main():
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)
     # ---------------------------------------------------------
+    elapsed_history = []  # 全ターンの実行時間を蓄積（分布ログ用）
+
     try:
         simulation_rounds = args.turns
         for i in range(simulation_rounds):
-            print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
+            turn_num = i + 1
+            print(f"\n⏱️ --- ターン {turn_num} / {simulation_rounds} ---")
             actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
 
             # ステップ前のtraceの最大IDを記録
             tr_cur = tracker_conn.cursor()
-            with sqlite3.connect(os.path.abspath(db_path)) as oasis_cur:
-                snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
+            try:
+                conn_pre = sqlite3.connect(os.path.abspath(db_path))
+                snap = conn_pre.execute("SELECT MAX(id) FROM trace").fetchone()
                 before_max_id = snap[0] if snap[0] else 0
+                conn_pre.close()
+            except Exception as e:
+                print(f"  ⚠️ trace ID取得エラー: {e}")
+                before_max_id = 0
 
-            # ★ターン時間の計測
+            # ターン時間の計測
             turn_started_at = datetime.now()
             executed_at = turn_started_at.isoformat()
+            elapsed_sec = 0.0
 
-            # ★メインステップ: env.step()を保護
+            # メインステップ
             try:
                 await env.step(actions)
                 turn_finished_at = datetime.now()
                 elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
-                print(f"  ⏱️ ターン {i + 1} 完了: {elapsed_sec:.1f}秒")
-
-                # turn_statsに記録
+                print(f"  ⏱️ ターン {turn_num} 完了: {elapsed_sec:.1f}秒")
                 try:
                     tr_cur.execute(
                         "INSERT OR REPLACE INTO turn_stats (turn, elapsed_sec, started_at, finished_at) VALUES (?, ?, ?, ?)",
                         (
-                            i + 1,
+                            turn_num,
                             elapsed_sec,
                             turn_started_at.isoformat(),
                             turn_finished_at.isoformat(),
@@ -658,20 +665,22 @@ async def main():
                 except Exception as e:
                     print(f"  ⚠️ ターン統計記録エラー: {e}")
             except Exception as e:
-                print(f"  ⚠️ ターン{i + 1}: ステップ実行中にエラーが発生しました: {e}")
+                print(
+                    f"  ⚠️ ターン{turn_num}: ステップ実行中にエラーが発生しました: {e}"
+                )
                 print(f"  → 次の処理に進みます...")
-                # エラーが発生しても、可能な限り次の処理を続行
-                turn_finished_at = datetime.now()
-                elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
+                elapsed_sec = (datetime.now() - turn_started_at).total_seconds()
+
+            elapsed_history.append(elapsed_sec)
 
             # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
-            if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
+            if turn_num % MEMORY_COMPRESS_INTERVAL == 0:
                 print(f"  🧠 メモリ圧縮チェック中...")
                 compress_tasks = [
                     compress_agent_memory(
                         agent,
                         ollama_model,
-                        i + 1,
+                        turn_num,
                         threshold=MEMORY_COMPRESS_THRESHOLD,
                         keep_recent=MEMORY_KEEP_RECENT,
                     )
@@ -682,55 +691,39 @@ async def main():
                     if isinstance(result, Exception):
                         print(f"  ⚠️ Agent {agent_id} のメモリ圧縮に失敗: {result}")
 
-            # ステップ後に追加されたtraceを取得して独自DBに記録
+            # ステップ後のtraceを取得してDBに記録 & W&B用統計を収集
+            action_counts = {}
+            total_posts = total_likes = total_comments = total_follows = 0
+            new_rows = []
             try:
-                with sqlite3.connect(os.path.abspath(db_path)) as oasis_cur:
-                    new_rows = oasis_cur.execute(
-                        "SELECT user_id, action, info, status FROM trace WHERE id > ?",
-                        (before_max_id,),
-                    ).fetchall()
+                conn_post = sqlite3.connect(os.path.abspath(db_path))
+                cur_post = conn_post.cursor()
 
-                    # アクションカウントを収集（W&Bログ用、常に初期化）
-                    action_counts = {}
-                    for row in new_rows:
-                        action = row[1]
-                        action_counts[action] = action_counts.get(action, 0) + 1
+                new_rows = cur_post.execute(
+                    "SELECT user_id, action, info, status FROM trace WHERE id > ?",
+                    (before_max_id,),
+                ).fetchall()
+                for row in new_rows:
+                    action_counts[row[1]] = action_counts.get(row[1], 0) + 1
 
-                    # 統計変数の初期化
-                    total_posts = total_likes = total_comments = total_follows = 0
-
-                    # ---------------------------------------------------------
-                    # W&Bにターン統計をログ（oasis_curを使い回す）
-                    # ---------------------------------------------------------
-                    if wandb_enabled:
-                        # 投稿数、いいね数などの統計
-                        try:
-                            total_posts = oasis_cur.execute(
-                                "SELECT COUNT(*) FROM post"
-                            ).fetchone()[0]
-                            total_likes = (
-                                oasis_cur.execute(
-                                    "SELECT SUM(num_likes) FROM post"
-                                ).fetchone()[0]
-                                or 0
-                            )
-                            total_comments = oasis_cur.execute(
-                                "SELECT COUNT(*) FROM comment"
-                            ).fetchone()[0]
-                            total_follows = oasis_cur.execute(
-                                "SELECT COUNT(*) FROM follow"
-                            ).fetchone()[0]
-                        except Exception as e:
-                            print(f"  ⚠️ 統計取得エラー: {e}")
-                            total_posts = total_likes = total_comments = (
-                                total_follows
-                            ) = 0
+                total_posts = cur_post.execute("SELECT COUNT(*) FROM post").fetchone()[
+                    0
+                ]
+                total_likes = (
+                    cur_post.execute("SELECT SUM(num_likes) FROM post").fetchone()[0]
+                    or 0
+                )
+                total_comments = cur_post.execute(
+                    "SELECT COUNT(*) FROM comment"
+                ).fetchone()[0]
+                total_follows = cur_post.execute(
+                    "SELECT COUNT(*) FROM follow"
+                ).fetchone()[0]
+                conn_post.close()
             except Exception as e:
-                print(f"  ⚠️ トレース取得エラー: {e}")
-                new_rows = []
-                action_counts = {}
-                total_posts = total_likes = total_comments = total_follows = 0
+                print(f"  ⚠️ 統計取得エラー: {e}")
 
+            # action_log に記録
             try:
                 for row in new_rows:
                     user_id, action, info, status = row
@@ -741,45 +734,33 @@ async def main():
                             (turn, agent_id, action_type, target_id, content, executed_at)
                             VALUES (?, ?, ?, ?, ?, ?)
                             """,
-                            (
-                                i + 1,
-                                user_id,
-                                action,
-                                None,
-                                info,
-                                executed_at,
-                            ),
+                            (turn_num, user_id, action, None, info, executed_at),
                         )
                     except Exception as e:
                         print(f"  ⚠️ ログ記録エラー (user_id={user_id}): {e}")
-
                 tracker_conn.commit()
             except Exception as e:
                 print(f"  ⚠️ コミットエラー: {e}")
 
             # ---------------------------------------------------------
             # W&Bにターン統計をログ
+            # step は指定せず wandb に自動管理させる（明示stepは2ターン目以降が無視される問題を回避）
             # ---------------------------------------------------------
             if wandb_enabled:
                 try:
-                    # デバッグ: ログ内容を確認
+                    log_data = {
+                        "turn": turn_num,
+                        "elapsed_sec": elapsed_sec,
+                        "total_posts": total_posts,
+                        "total_likes": total_likes,
+                        "total_comments": total_comments,
+                        "total_follows": total_follows,
+                        "elapsed_distribution": wandb.Histogram(elapsed_history),
+                        **{f"action/{k}": v for k, v in action_counts.items()},
+                    }
+                    wandb.log(log_data)
                     print(
-                        f"  📊 W&Bログ: turn={i + 1}, posts={total_posts}, likes={total_likes}, actions={action_counts}"
-                    )
-
-                    # W&Bにログ
-                    wandb.log(
-                        {
-                            "elapsed_sec": (
-                                elapsed_sec if "elapsed_sec" in locals() else 0
-                            ),
-                            "total_posts": total_posts,
-                            "total_likes": total_likes,
-                            "total_comments": total_comments,
-                            "total_follows": total_follows,
-                            **{f"action_{k}": v for k, v in action_counts.items()},
-                        },
-                        step=i + 1,
+                        f"  📊 W&Bログ送信: turn={turn_num}, elapsed={elapsed_sec:.1f}s, posts={total_posts}, actions={action_counts}"
                     )
                 except Exception as e:
                     print(f"  ⚠️ W&Bログエラー: {e}")
