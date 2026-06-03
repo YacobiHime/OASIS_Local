@@ -749,7 +749,6 @@ async def main():
             if wandb_enabled:
                 try:
                     log_data = {
-                        "turn": turn_num,
                         "elapsed_sec": elapsed_sec,
                         "total_posts": total_posts,
                         "total_likes": total_likes,
@@ -758,7 +757,7 @@ async def main():
                         "elapsed_distribution": wandb.Histogram(elapsed_history),
                         **{f"action/{k}": v for k, v in action_counts.items()},
                     }
-                    wandb.log(log_data)
+                    wandb.log(log_data, step=turn_num)
                     print(
                         f"  📊 W&Bログ送信: turn={turn_num}, elapsed={elapsed_sec:.1f}s, posts={total_posts}, actions={action_counts}"
                     )
