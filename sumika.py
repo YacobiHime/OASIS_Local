@@ -16,6 +16,12 @@ from oasis.clock.clock import Clock
 
 import wandb
 
+# ---------------------------------------------------------
+# 設定ファイルの読み込み
+# ---------------------------------------------------------
+with open("config.json", "r", encoding="utf-8") as _f:
+    CONFIG = json.load(_f)
+
 
 def init_tracker_db(db_path):
     conn = sqlite3.connect(db_path)
@@ -176,9 +182,17 @@ async def compress_agent_memory(
     if len(non_system) < threshold:
         return  # まだ圧縮不要
 
-    # 圧縮対象: 最新 MEMORY_KEEP_RECENT 件を除いた古い部分
-    to_compress = non_system[:-keep_recent] if keep_recent > 0 else non_system
-    to_keep = non_system[-keep_recent:] if keep_recent > 0 else []
+    # 要約レコードと通常レコードを分離
+    SUMMARY_MARKER = "[過去の記憶まとめ"
+    summaries = [r for r in non_system if r.message.content.startswith(SUMMARY_MARKER)]
+    non_summary = [
+        r for r in non_system if not r.message.content.startswith(SUMMARY_MARKER)
+    ]
+
+    # 圧縮対象: 通常レコードの古い部分 + 要約は常に圧縮対象
+    to_keep = non_summary[-keep_recent:] if keep_recent > 0 else []
+    old_non_sum = non_summary[:-keep_recent] if keep_recent > 0 else non_summary
+    to_compress = summaries + old_non_sum  # 要約は必ず再圧縮
 
     if not to_compress:
         return
@@ -189,16 +203,20 @@ async def compress_agent_memory(
     )
 
     prompt = (
-        f"以下はSNSシミュレーション上のユーザー「{agent.user_info.name}」の行動履歴です。\n"
-        f"重要な出来事・感情・関係性・発言だけを3〜5行の日本語で簡潔に要約してください。\n"
-        f"要約のみ出力し、それ以外は一切出力しないでください。\n\n"
-        f"--- 履歴 ---\n{history_text}"
+        f"SNSユーザー「{agent.user_info.name}」の行動履歴を3行以内で要約してください。"
+        f"重要な出来事・関係・感情のみ。余分な説明不要。\n\n{history_text}"
     )
 
     try:
         user_msg = [{"role": "user", "content": prompt}]
-        response = await ollama_model.arun(user_msg)
+        # タイムアウト付きで実行
+        response = await asyncio.wait_for(
+            ollama_model.arun(user_msg), timeout=120.0  # 2分でタイムアウト
+        )
         summary_text = response.choices[0].message.content
+    except asyncio.TimeoutError:
+        print(f"  ⚠️ メモリ圧縮タイムアウト (agent={agent.social_agent_id}): スキップ")
+        return
     except Exception as e:
         print(f"  ⚠️ メモリ圧縮失敗 (agent={agent.social_agent_id}): {e}")
         return
@@ -240,11 +258,11 @@ async def main():
     # メモリ圧縮の設定
     # ---------------------------------------------------------
     # この件数を超えたターンで圧縮を実行する（システムメッセージ除く）
-    MEMORY_COMPRESS_THRESHOLD = 10
+    MEMORY_COMPRESS_THRESHOLD = 6  # 10→6: コンテキスト節約のため早めに圧縮
     # 圧縮後も最新N件のレコードはそのまま保持する
-    MEMORY_KEEP_RECENT = 3
+    MEMORY_KEEP_RECENT = 2  # 3→2: 直近2件のみ保持
     # N ターンごとにメモリ圧縮チェックを行う（1 = 毎ターン）
-    MEMORY_COMPRESS_INTERVAL = 3
+    MEMORY_COMPRESS_INTERVAL = 1  # 3→1: 毎ターンチェック（小モデル対策）
 
     # ---------------------------------------------------------
     # 0. コマンドライン引数の設定
@@ -266,6 +284,11 @@ async def main():
         "--no-wandb",
         action="store_true",
         help="Weights & Biasesを無効化",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="既存のDBを削除せず再開する",
     )
     args = parser.parse_args()
 
@@ -304,12 +327,12 @@ async def main():
 
     ollama_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type="VladimirGav/gemma4-26b-16GB-VRAM-Uncensored",
-        url="http://192.168.15.150:11434/v1",  # Ollamaのポート番号（11434）
-        api_key="ollama",  # エラー回避用のダミーキー
+        model_type=CONFIG["ollama_model_sim"],
+        url=CONFIG["ollama_url"],
+        api_key="ollama",
+        timeout=300.0,  # 5分でタイムアウト
+        max_retries=2,  # 失敗時2回リトライ
     )
-
-    # "joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b"
 
     # ollama_model = ModelFactory.create(
     # model_platform=ModelPlatformType.OPENAI,
@@ -374,15 +397,17 @@ async def main():
     # ---------------------------------------------------------
     # 4. 環境構築
     # ---------------------------------------------------------
-    db_path = "./ollama_twitter.db"
+    db_path = CONFIG["db_path"]
+    tracker_db_path = CONFIG["tracker_db_path"]
     os.environ["OASIS_DB_PATH"] = os.path.abspath(db_path)
 
-    if os.path.exists(db_path):
-        os.remove(db_path)
-
-    tracker_db_path = "./sumika_tracker.db"
-    if os.path.exists(tracker_db_path):
-        os.remove(tracker_db_path)
+    if not args.resume:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+        if os.path.exists(tracker_db_path):
+            os.remove(tracker_db_path)
+    else:
+        print(f"♻️  resumeモード: 既存のDBを引き継ぎます")
 
     platform = Platform(
         db_path=db_path,
@@ -400,7 +425,7 @@ async def main():
         database_path=db_path,
     )
     await env.reset()
-    tracker_conn = init_tracker_db("sumika_tracker.db")
+    tracker_conn = init_tracker_db(tracker_db_path)
 
     # ---------------------------------------------------------
     # 初期フォロー関係の注入
@@ -595,181 +620,192 @@ async def main():
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)
     # ---------------------------------------------------------
-    simulation_rounds = args.turns
-    for i in range(simulation_rounds):
-        print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
-        actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+    try:
+        simulation_rounds = args.turns
+        for i in range(simulation_rounds):
+            print(f"\n⏱️ --- ターン {i + 1} / {simulation_rounds} ---")
+            actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
 
-        # ステップ前のtraceの最大IDを記録
-        tr_cur = tracker_conn.cursor()
-        oasis_cur = sqlite3.connect(os.path.abspath(db_path))
-        snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
-        before_max_id = snap[0] if snap[0] else 0
+            # ステップ前のtraceの最大IDを記録
+            tr_cur = tracker_conn.cursor()
+            with sqlite3.connect(os.path.abspath(db_path)) as oasis_cur:
+                snap = oasis_cur.execute("SELECT MAX(id) FROM trace").fetchone()
+                before_max_id = snap[0] if snap[0] else 0
 
-        # ★ターン時間の計測
-        turn_started_at = datetime.now()
-        executed_at = turn_started_at.isoformat()
+            # ★ターン時間の計測
+            turn_started_at = datetime.now()
+            executed_at = turn_started_at.isoformat()
 
-        # ★メインステップ: env.step()を保護
-        try:
-            await env.step(actions)
-            turn_finished_at = datetime.now()
-            elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
-            print(f"  ⏱️ ターン {i + 1} 完了: {elapsed_sec:.1f}秒")
-
-            # turn_statsに記録
+            # ★メインステップ: env.step()を保護
             try:
-                tr_cur.execute(
-                    "INSERT OR REPLACE INTO turn_stats (turn, elapsed_sec, started_at, finished_at) VALUES (?, ?, ?, ?)",
-                    (
-                        i + 1,
-                        elapsed_sec,
-                        turn_started_at.isoformat(),
-                        turn_finished_at.isoformat(),
-                    ),
-                )
-                tracker_conn.commit()
-            except Exception as e:
-                print(f"  ⚠️ ターン統計記録エラー: {e}")
-        except Exception as e:
-            print(f"  ⚠️ ターン{i + 1}: ステップ実行中にエラーが発生しました: {e}")
-            print(f"  → 次の処理に進みます...")
-            # エラーが発生しても、可能な限り次の処理を続行
-            turn_finished_at = datetime.now()
-            elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
+                await env.step(actions)
+                turn_finished_at = datetime.now()
+                elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
+                print(f"  ⏱️ ターン {i + 1} 完了: {elapsed_sec:.1f}秒")
 
-        # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
-        if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
-            print(f"  🧠 メモリ圧縮チェック中...")
-            for agent_id, agent in env.agent_graph.get_agents():
+                # turn_statsに記録
                 try:
-                    await compress_agent_memory(
+                    tr_cur.execute(
+                        "INSERT OR REPLACE INTO turn_stats (turn, elapsed_sec, started_at, finished_at) VALUES (?, ?, ?, ?)",
+                        (
+                            i + 1,
+                            elapsed_sec,
+                            turn_started_at.isoformat(),
+                            turn_finished_at.isoformat(),
+                        ),
+                    )
+                    tracker_conn.commit()
+                except Exception as e:
+                    print(f"  ⚠️ ターン統計記録エラー: {e}")
+            except Exception as e:
+                print(f"  ⚠️ ターン{i + 1}: ステップ実行中にエラーが発生しました: {e}")
+                print(f"  → 次の処理に進みます...")
+                # エラーが発生しても、可能な限り次の処理を続行
+                turn_finished_at = datetime.now()
+                elapsed_sec = (turn_finished_at - turn_started_at).total_seconds()
+
+            # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
+            if (i + 1) % MEMORY_COMPRESS_INTERVAL == 0:
+                print(f"  🧠 メモリ圧縮チェック中...")
+                compress_tasks = [
+                    compress_agent_memory(
                         agent,
                         ollama_model,
                         i + 1,
                         threshold=MEMORY_COMPRESS_THRESHOLD,
                         keep_recent=MEMORY_KEEP_RECENT,
                     )
-                except Exception as e:
-                    print(f"  ⚠️ Agent {agent_id} のメモリ圧縮に失敗: {e}")
-                    # メモリ圧縮の失敗はシミュレーション続行
+                    for agent_id, agent in env.agent_graph.get_agents()
+                ]
+                results = await asyncio.gather(*compress_tasks, return_exceptions=True)
+                for (agent_id, _), result in zip(env.agent_graph.get_agents(), results):
+                    if isinstance(result, Exception):
+                        print(f"  ⚠️ Agent {agent_id} のメモリ圧縮に失敗: {result}")
 
-        # ステップ後に追加されたtraceを取得して独自DBに記録
-        try:
-            new_rows = oasis_cur.execute(
-                "SELECT user_id, action, info, status FROM trace WHERE id > ?",
-                (before_max_id,),
-            ).fetchall()
-        except Exception as e:
-            print(f"  ⚠️ トレース取得エラー: {e}")
-            new_rows = []
+            # ステップ後に追加されたtraceを取得して独自DBに記録
+            try:
+                with sqlite3.connect(os.path.abspath(db_path)) as oasis_cur:
+                    new_rows = oasis_cur.execute(
+                        "SELECT user_id, action, info, status FROM trace WHERE id > ?",
+                        (before_max_id,),
+                    ).fetchall()
 
-        try:
-            for row in new_rows:
-                user_id, action, info, status = row
+                    # アクションカウントを収集（W&Bログ用、常に初期化）
+                    action_counts = {}
+                    for row in new_rows:
+                        action = row[1]
+                        action_counts[action] = action_counts.get(action, 0) + 1
+
+                    # 統計変数の初期化
+                    total_posts = total_likes = total_comments = total_follows = 0
+
+                    # ---------------------------------------------------------
+                    # W&Bにターン統計をログ（oasis_curを使い回す）
+                    # ---------------------------------------------------------
+                    if wandb_enabled:
+                        # 投稿数、いいね数などの統計
+                        try:
+                            total_posts = oasis_cur.execute(
+                                "SELECT COUNT(*) FROM post"
+                            ).fetchone()[0]
+                            total_likes = (
+                                oasis_cur.execute(
+                                    "SELECT SUM(num_likes) FROM post"
+                                ).fetchone()[0]
+                                or 0
+                            )
+                            total_comments = oasis_cur.execute(
+                                "SELECT COUNT(*) FROM comment"
+                            ).fetchone()[0]
+                            total_follows = oasis_cur.execute(
+                                "SELECT COUNT(*) FROM follow"
+                            ).fetchone()[0]
+                        except Exception as e:
+                            print(f"  ⚠️ 統計取得エラー: {e}")
+                            total_posts = total_likes = total_comments = (
+                                total_follows
+                            ) = 0
+            except Exception as e:
+                print(f"  ⚠️ トレース取得エラー: {e}")
+                new_rows = []
+                action_counts = {}
+                total_posts = total_likes = total_comments = total_follows = 0
+
+            try:
+                for row in new_rows:
+                    user_id, action, info, status = row
+                    try:
+                        tr_cur.execute(
+                            """
+                            INSERT INTO action_log
+                            (turn, agent_id, action_type, target_id, content, executed_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                i + 1,
+                                user_id,
+                                action,
+                                None,
+                                info,
+                                executed_at,
+                            ),
+                        )
+                    except Exception as e:
+                        print(f"  ⚠️ ログ記録エラー (user_id={user_id}): {e}")
+
+                tracker_conn.commit()
+            except Exception as e:
+                print(f"  ⚠️ コミットエラー: {e}")
+
+            # ---------------------------------------------------------
+            # W&Bにターン統計をログ
+            # ---------------------------------------------------------
+            if wandb_enabled:
                 try:
-                    tr_cur.execute(
-                        """
-                        INSERT INTO action_log
-                        (turn, agent_id, action_type, target_id, content, executed_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            i + 1,
-                            user_id,
-                            action,
-                            None,
-                            info,
-                            executed_at,
-                        ),
+                    # デバッグ: ログ内容を確認
+                    print(
+                        f"  📊 W&Bログ: turn={i + 1}, posts={total_posts}, likes={total_likes}, actions={action_counts}"
+                    )
+
+                    # W&Bにログ
+                    wandb.log(
+                        {
+                            "elapsed_sec": (
+                                elapsed_sec if "elapsed_sec" in locals() else 0
+                            ),
+                            "total_posts": total_posts,
+                            "total_likes": total_likes,
+                            "total_comments": total_comments,
+                            "total_follows": total_follows,
+                            **{f"action_{k}": v for k, v in action_counts.items()},
+                        },
+                        step=i + 1,
                     )
                 except Exception as e:
-                    print(f"  ⚠️ ログ記録エラー (user_id={user_id}): {e}")
+                    print(f"  ⚠️ W&Bログエラー: {e}")
+                    import traceback
 
-            tracker_conn.commit()
-        except Exception as e:
-            print(f"  ⚠️ コミットエラー: {e}")
-        finally:
-            try:
-                oasis_cur.close()
-            except:
-                pass
+                    traceback.print_exc()
+
+        print("✅ シミュレーション終了！")
 
         # ---------------------------------------------------------
-        # W&Bにターン統計をログ
+        # W&Bの終了処理
         # ---------------------------------------------------------
         if wandb_enabled:
             try:
-                # アクションカウントを収集
-                action_counts = {}
-                for row in new_rows:
-                    action = row[1]
-                    action_counts[action] = action_counts.get(action, 0) + 1
-
-                # データベースから追加の統計を収集
-                stats_conn = sqlite3.connect(os.path.abspath(db_path))
-                try:
-                    # 投稿数、いいね数などの統計
-                    total_posts = stats_conn.execute(
-                        "SELECT COUNT(*) FROM post"
-                    ).fetchone()[0]
-                    total_likes = (
-                        stats_conn.execute(
-                            "SELECT SUM(num_likes) FROM post"
-                        ).fetchone()[0]
-                        or 0
-                    )
-                    total_comments = stats_conn.execute(
-                        "SELECT COUNT(*) FROM comment"
-                    ).fetchone()[0]
-
-                    # フォロー数の統計
-                    total_follows = stats_conn.execute(
-                        "SELECT COUNT(*) FROM follow"
-                    ).fetchone()[0]
-                except Exception as e:
-                    print(f"  ⚠️ 統計取得エラー: {e}")
-                    total_posts = total_likes = total_comments = total_follows = 0
-                finally:
-                    stats_conn.close()
-
-                # デバッグ: ログ内容を確認
-                print(
-                    f"  📊 W&Bログ: turn={i + 1}, posts={total_posts}, likes={total_likes}, actions={action_counts}"
-                )
-
-                # W&Bにログ
-                wandb.log(
-                    {
-                        "turn": i + 1,
-                        "elapsed_sec": elapsed_sec if "elapsed_sec" in locals() else 0,
-                        "total_posts": total_posts,
-                        "total_likes": total_likes,
-                        "total_comments": total_comments,
-                        "total_follows": total_follows,
-                        **{f"action_{k}": v for k, v in action_counts.items()},
-                    }
-                )
+                wandb.finish()
+                print("📊 W&Bログ完了")
             except Exception as e:
-                print(f"  ⚠️ W&Bログエラー: {e}")
-                import traceback
+                print(f"⚠️ W&B終了エラー: {e}")
 
-                traceback.print_exc()
+    except KeyboardInterrupt:
+        print("\n⚠️ 中断されました。クリーンアップします...")
 
-    print("✅ シミュレーション終了！")
-
-    # ---------------------------------------------------------
-    # W&Bの終了処理
-    # ---------------------------------------------------------
-    if wandb_enabled:
-        try:
-            wandb.finish()
-            print("📊 W&Bログ完了")
-        except Exception as e:
-            print(f"⚠️ W&B終了エラー: {e}")
-
-    await env.close()
-    tracker_conn.close()
+    finally:
+        await env.close()
+        tracker_conn.close()
+        print("🔒 DB接続をクローズしました。")
 
 
 if __name__ == "__main__":

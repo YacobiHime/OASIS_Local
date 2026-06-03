@@ -137,10 +137,11 @@ class PlatformUtils:
                 num_reports = self.db_cursor.fetchone()[0]
 
             # For each post, query its corresponding comments (all levels)
+            # ★ 最新5件のみ取得してコンテキスト肥大化を防止
             self.db_cursor.execute(
                 "SELECT comment_id, post_id, parent_comment_id, user_id, "
                 "content, created_at, num_likes, num_dislikes "
-                "FROM comment WHERE post_id = ? ORDER BY created_at ASC",
+                "FROM comment WHERE post_id = ? ORDER BY created_at DESC LIMIT 5",
                 (post_id,),
             )
             comments_results = self.db_cursor.fetchall()
