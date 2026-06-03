@@ -748,14 +748,32 @@ async def main():
             # ---------------------------------------------------------
             if wandb_enabled:
                 try:
+                    ACTION_LABEL_JA = {
+                        "refresh":              "行動/タイムライン更新",
+                        "create_post":          "行動/投稿",
+                        "like_post":            "行動/投稿いいね",
+                        "unlike_post":          "行動/投稿いいね取消",
+                        "dislike_post":         "行動/投稿よくない",
+                        "undo_dislike_post":    "行動/投稿よくない取消",
+                        "follow":               "行動/フォロー",
+                        "unfollow":             "行動/フォロー解除",
+                        "repost":               "行動/リポスト",
+                        "quote_post":           "行動/引用投稿",
+                        "create_comment":       "行動/コメント",
+                        "like_comment":         "行動/コメントいいね",
+                        "unlike_comment":       "行動/コメントいいね取消",
+                        "dislike_comment":      "行動/コメントよくない",
+                        "undo_dislike_comment": "行動/コメントよくない取消",
+                    }
                     log_data = {
-                        "elapsed_sec": elapsed_sec,
-                        "total_posts": total_posts,
-                        "total_likes": total_likes,
-                        "total_comments": total_comments,
-                        "total_follows": total_follows,
-                        "elapsed_distribution": wandb.Histogram(elapsed_history),
-                        **{f"action/{k}": v for k, v in action_counts.items()},
+                        "統計/経過時間(秒)":       elapsed_sec,
+                        "統計/累計投稿数":          total_posts,
+                        "統計/累計いいね数":        total_likes,
+                        "統計/累計コメント数":      total_comments,
+                        "統計/累計フォロー数":      total_follows,
+                        "統計/処理時間分布":        wandb.Histogram(elapsed_history),
+                        **{ACTION_LABEL_JA.get(k, f"行動/{k}"): v
+                           for k, v in action_counts.items()},
                     }
                     wandb.log(log_data, step=turn_num)
                     print(
