@@ -21,6 +21,7 @@ config.json 追加フィールド:
     }
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -142,9 +143,14 @@ def patch_agents_with_event_env(
 # メインシミュレーション
 # ─────────────────────────────────────────
 
-async def run_simulation():
+async def run_simulation(num_steps: int):
     logger.info("=== OASIS Event-Driven Simulation START ===")
-    logger.info("DB: %s | Steps: %d | SearXNG: %s", DB_PATH, NUM_STEPS, SEARXNG_URL)
+    logger.info("DB: %s | Steps: %d | SearXNG: %s", DB_PATH, num_steps, SEARXNG_URL)
+
+    # --- 既存DBの削除 (二重起動防止) ---
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+        logger.info("Removed existing DB: %s", DB_PATH)
 
     # --- W&B 初期化 ---
     run = wandb.init(
@@ -181,14 +187,14 @@ async def run_simulation():
     agent_graph = AgentGraph()
     for prof in profiles:
         user_info = UserInfo(
+            user_name=prof.get("name", "user").lower(),
             name=prof.get("name", "User"),
-            user_name=prof.get("user_name", "user"),
-            bio=prof.get("bio", ""),
-            age=prof.get("age", 20),
-            gender=prof.get("gender", "unknown"),
+            description=prof.get("bio", ""),
+            profile={"other_info": prof.get("other_info", {})},
+            recsys_type="twitter",
         )
         agent = SocialAgent(
-            agent_id=int(prof["agent_id"]),
+            agent_id=int(prof["id"]),
             user_info=user_info,
             channel=channel,
             model=model,
@@ -231,9 +237,9 @@ async def run_simulation():
     # ─────────────────────────────────────
     # シミュレーションループ
     # ─────────────────────────────────────
-    for step in range(1, NUM_STEPS + 1):
+    for step in range(1, num_steps + 1):
         t_start = datetime.now()
-        logger.info("── Step %d / %d ──", step, NUM_STEPS)
+        logger.info("── Step %d / %d ──", step, num_steps)
 
         await env.step_event_driven()
 
@@ -261,4 +267,10 @@ async def run_simulation():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_simulation())
+    parser = argparse.ArgumentParser(description="OASIS Event-Driven Simulation")
+    parser.add_argument("--turns", type=int, default=None,
+                        help="Number of simulation steps (overrides config)")
+    args = parser.parse_args()
+
+    steps = args.turns if args.turns is not None else NUM_STEPS
+    asyncio.run(run_simulation(steps))
