@@ -1,0 +1,33 @@
+{
+    "ollama_url": "http://localhost:11434/v1",
+    "ollama_model_sim": "joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
+    "ollama_model_check": "gemma4:e4b",
+    "db_path": "./ollama_twitter.db",
+    "tracker_db_path": "./sumika_tracker.db",
+    "model_type": "llama3",
+    "recsys_type": "twitter",
+    "refresh_rec_post_count": 2,
+    "max_rec_post_len": 2,
+    "following_post_count": 3,
+    "num_steps": 20,
+    "seed_path": "seeds/seed_test.json",
+    "profile_path": "profiles/test.json",
+    "wandb_project": "oasis-event-driven",
+    "wandb_mode": "online",
+    "event_driven": {
+        "enabled": true,
+        "baseline_wakeup_rate": 0.1,
+        "inject_interval_steps": 5,
+        "searxng_url": "http://192.168.15.146:8080",
+        "topics": [
+            "AI倫理 最新ニュース",
+            "SNS誤情報 拡散",
+            "生成AI 規制",
+            "ソーシャルメディア 社会影響",
+            "フェイクニュース 対策"
+        ],
+        "num_results_per_topic": 3,
+        "news_bot_agent_id": 0,
+        "categories": "general"
+    }
+}
