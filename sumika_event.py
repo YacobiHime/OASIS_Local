@@ -198,7 +198,20 @@ async def run_simulation(num_steps: int):
             user_info=user_info,
             channel=channel,
             model=model,
-            available_actions=ActionType.get_default_twitter_actions(),
+            available_actions=[
+                ActionType.CREATE_POST,
+                ActionType.LIKE_POST,
+                ActionType.REPOST,
+                ActionType.FOLLOW,
+                ActionType.QUOTE_POST,
+                ActionType.DO_NOTHING,
+                ActionType.CREATE_COMMENT,
+                ActionType.LIKE_COMMENT,
+                ActionType.SEARCH_POSTS,
+                ActionType.TREND,
+                ActionType.UNFOLLOW,
+                ActionType.MUTE,
+            ],
         )
         agent_graph.add_agent(agent)
 
