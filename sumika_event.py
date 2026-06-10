@@ -87,12 +87,12 @@ PROFILE_PATH        = CONFIG.get("profile_path", "profiles/test.json")
 # ─────────────────────────────────────────
 
 def build_model():
-    ollama_url = CONFIG.get("ollama_url", "http://localhost:11434")
-    model_type = CONFIG.get("model_type", "llama3")
+    ollama_url = CONFIG.get("ollama_url", "http://localhost:11434/v1")
+    model_type = CONFIG.get("ollama_model_sim", "llama3")
     return ModelFactory.create(
         model_platform=ModelPlatformType.OLLAMA,
         model_type=model_type,
-        url=f"{ollama_url}/v1",
+        url=ollama_url,
         model_config_dict={"temperature": 0.7},
     )
 
