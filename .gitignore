@@ -109,6 +109,13 @@ result_data/
 # --- Weights & Biases ---
 wandb/
 
+# --- Config (contains local IP) ---
+config.json
+
+# --- Generated / local data ---
+raw_users.json
+gemini_prompt.txt
+
 # --- Backup files ---
 *.backup
 *.bak

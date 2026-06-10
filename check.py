@@ -15,10 +15,15 @@ from camel.messages import BaseMessage
 
 
 # ---------------------------------------------------------
-# 設定ファイルの読み込み
+# 設定ファイルの読み込み（環境変数 OLLAMA_URL 優先）
 # ---------------------------------------------------------
 with open("config.json", "r", encoding="utf-8") as _f:
     _cfg = json.load(_f)
+
+# 環境変数で上書き
+if os.environ.get("OLLAMA_URL"):
+    _cfg["ollama_url"] = os.environ["OLLAMA_URL"]
+
 db_path = _cfg["db_path"]
 tracker_db_path = _cfg["tracker_db_path"]
 ENABLE_SUMMARY = False  # ★ Falseにすると要約をスキップ

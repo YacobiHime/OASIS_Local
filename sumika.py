@@ -17,10 +17,14 @@ from oasis.clock.clock import Clock
 import wandb
 
 # ---------------------------------------------------------
-# 設定ファイルの読み込み
+# 設定ファイルの読み込み（環境変数 OLLAMA_URL 優先）
 # ---------------------------------------------------------
 with open("config.json", "r", encoding="utf-8") as _f:
     CONFIG = json.load(_f)
+
+# 環境変数で上書き
+if os.environ.get("OLLAMA_URL"):
+    CONFIG["ollama_url"] = os.environ["OLLAMA_URL"]
 
 
 def init_tracker_db(db_path):
@@ -114,13 +118,11 @@ def load_profiles(folder_path):
     profiles = []
     try:
         if not os.path.isdir(folder_path):
-            print(f"❌ エラー: '{folder_path}' はディレクトリではありません。")
-            exit(1)
+            raise RuntimeError(f"'{folder_path}' はディレクトリではありません。")
 
         json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
         if not json_files:
-            print(f"❌ エラー: '{folder_path}' にJSONファイルがありません。")
-            exit(1)
+            raise RuntimeError(f"'{folder_path}' にJSONファイルがありません。")
 
         for json_file in sorted(json_files):
             file_path = os.path.join(folder_path, json_file)
@@ -156,8 +158,7 @@ def load_profiles(folder_path):
         print(f"✅ 合計 {len(profiles)} 個のプロファイルを読み込みました。")
         return profiles
     except Exception as e:
-        print(f"❌ エラー: {e}")
-        exit(1)
+        raise RuntimeError(f"プロファイル読み込みエラー: {e}")
 
 
 async def compress_agent_memory(
@@ -288,7 +289,7 @@ async def main():
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="既存のDBを削除せず再開する",
+        help="既存のDBを削除せず再開する（seed投稿もスキップ）",
     )
     args = parser.parse_args()
 
@@ -307,7 +308,7 @@ async def main():
                 config={
                     "num_agents": len(profiles),
                     "num_turns": args.turns,
-                    "model": "Gemma-4-Uncensored-HauhauCS-Aggressive",
+                    "model": CONFIG["ollama_model_sim"],
                     "memory_compress_threshold": MEMORY_COMPRESS_THRESHOLD,
                     "memory_keep_recent": MEMORY_KEEP_RECENT,
                     "memory_compress_interval": MEMORY_COMPRESS_INTERVAL,
@@ -428,49 +429,50 @@ async def main():
     tracker_conn = init_tracker_db(tracker_db_path)
 
     # ---------------------------------------------------------
-    # 初期フォロー関係の注入
+    # 初期フォロー関係の注入（env.reset() 完了後に実行）
     # ---------------------------------------------------------
     print("🔗 初期フォロー関係を設定中...")
     follow_conn = sqlite3.connect(os.path.abspath(db_path))
     follow_count = 0
 
-    for profile in profiles:
-        follower_id = profile["id"]
-        for followee_id in profile.get("initial_follows", []):
-            # 自己フォローはスキップ
-            if follower_id == followee_id:
-                continue
-            # 対象IDが存在するか確認
-            if not any(p["id"] == followee_id for p in profiles):
-                print(
-                    f"  ⚠️ initial_follows: ID={followee_id} は存在しません。スキップ。"
-                )
-                continue
-            try:
-                # followテーブルに挿入
-                follow_conn.execute(
-                    "INSERT OR IGNORE INTO follow (follower_id, followee_id, created_at) VALUES (?, ?, ?)",
-                    (follower_id, followee_id, 0),
-                )
-                # num_followings / num_followers を更新
-                follow_conn.execute(
-                    "UPDATE user SET num_followings = num_followings + 1 WHERE user_id = ?",
-                    (follower_id,),
-                )
-                follow_conn.execute(
-                    "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?",
-                    (followee_id,),
-                )
-                # AgentGraphにもエッジを追加（推薦システム用）
-                env.agent_graph.add_edge(follower_id, followee_id)
-                follow_count += 1
-            except Exception as e:
-                print(f"  ⚠️ フォロー設定失敗 ({follower_id}→{followee_id}): {e}")
-
-    # コミットはループ外で1回だけ
     try:
-        follow_conn.commit()
+        follow_conn.execute("BEGIN")
+        for profile in profiles:
+            follower_id = profile["id"]
+            for followee_id in profile.get("initial_follows", []):
+                # 自己フォローはスキップ
+                if follower_id == followee_id:
+                    continue
+                # 対象IDが存在するか確認
+                if not any(p["id"] == followee_id for p in profiles):
+                    print(
+                        f"  ⚠️ initial_follows: ID={followee_id} は存在しません。スキップ。"
+                    )
+                    continue
+                try:
+                    # followテーブルに挿入
+                    follow_conn.execute(
+                        "INSERT OR IGNORE INTO follow (follower_id, followee_id, created_at) VALUES (?, ?, ?)",
+                        (follower_id, followee_id, 0),
+                    )
+                    # num_followings / num_followers を更新
+                    follow_conn.execute(
+                        "UPDATE user SET num_followings = num_followings + 1 WHERE user_id = ?",
+                        (follower_id,),
+                    )
+                    follow_conn.execute(
+                        "UPDATE user SET num_followers = num_followers + 1 WHERE user_id = ?",
+                        (followee_id,),
+                    )
+                    # AgentGraphにもエッジを追加（推薦システム用）
+                    env.agent_graph.add_edge(follower_id, followee_id)
+                    follow_count += 1
+                except Exception as e:
+                    print(f"  ⚠️ フォロー設定失敗 ({follower_id}→{followee_id}): {e}")
+
+        follow_conn.execute("COMMIT")
     except Exception as e:
+        follow_conn.execute("ROLLBACK")
         print(f"  ⚠️ フォロー関係のコミットに失敗: {e}")
 
     follow_conn.close()
@@ -519,108 +521,131 @@ async def main():
     seed_posts = load_all_from_folder("seeds")
     seed_comments = load_json_file("seeds/seed_comments.json")
 
-    # OASISのDBに直接アクセスするコネクション（いいね数などの上書き用）
-    oasis_conn = sqlite3.connect(os.path.abspath(db_path))
-
     post_id_map = {}  # post_index → 実際のpost_id
 
-    for i, seed in enumerate(seed_posts):
-        author = env.agent_graph.get_agent(seed["author_id"])
-        seed_action = {
-            author: [
-                ManualAction(
-                    action_type=ActionType.CREATE_POST,
-                    action_args={"content": seed["content"]},
+    if args.resume:
+        # resumeモード: seed投稿・コメントの注入をスキップ
+        print("♻️  resumeモード: seed投稿・コメントの注入をスキップします。")
+    else:
+        # 新規モード: seed投稿を注入（env.step 完了後にDB操作を行う）
+        # OASISのDBに直接アクセスするコネクション（いいね数などの上書き用）
+        oasis_conn = sqlite3.connect(os.path.abspath(db_path))
+
+        for i, seed in enumerate(seed_posts):
+            # --- step 実行 ---
+            author = env.agent_graph.get_agent(seed["author_id"])
+            seed_action = {
+                author: [
+                    ManualAction(
+                        action_type=ActionType.CREATE_POST,
+                        action_args={"content": seed["content"]},
+                    )
+                ]
+            }
+            executed_at = datetime.now().isoformat()
+            await env.step(seed_action)
+
+            # --- step 完了後にDB操作（last_insert_rowid で実際のIDを取得） ---
+            try:
+                actual_post_id = oasis_conn.execute(
+                    "SELECT last_insert_rowid()"
+                ).fetchone()[0]
+            except Exception:
+                actual_post_id = i + 1  # フォールバック
+
+            post_id_map[i] = actual_post_id
+
+            # OASISのpostテーブルにいいね数・リポスト数を直接書き込む
+            try:
+                oasis_conn.execute("BEGIN")
+                oasis_conn.execute(
+                    "UPDATE post SET num_likes=?, num_shares=? WHERE post_id=?",
+                    (
+                        seed.get("num_likes", 0),
+                        seed.get("num_reposts", 0),
+                        actual_post_id,
+                    ),
                 )
-            ]
-        }
-        executed_at = datetime.now().isoformat()
-        await env.step(seed_action)
+                oasis_conn.execute("COMMIT")
+            except Exception as e:
+                oasis_conn.execute("ROLLBACK")
+                print(f"  ⚠️ post初期値の書き込み失敗 (post_id={actual_post_id}): {e}")
 
-        post_id = i + 1
-        post_id_map[i] = post_id
-
-        # OASISのpostテーブルにいいね数・リポスト数を直接書き込む
-        try:
-            oasis_conn.execute(
-                "UPDATE post SET num_likes=?, num_shares=? WHERE post_id=?",
-                (
-                    seed.get("num_likes", 0),
-                    seed.get("num_reposts", 0),
-                    post_id,
-                ),
-            )
-            oasis_conn.commit()
-        except Exception as e:
-            print(f"  ⚠️ post初期値の書き込み失敗 (post_id={post_id}): {e}")
-
-        # action_logにseed投稿を記録
-        tr_cur = tracker_conn.cursor()
-        tr_cur.execute(
-            """
-            INSERT INTO action_log
-            (turn, agent_id, action_type, target_id, content, executed_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                0,
-                seed["author_id"],
-                "create_post",
-                post_id,
-                json.dumps(
-                    {"post_id": post_id, "content": seed["content"]}, ensure_ascii=False
-                ),
-                executed_at,
-            ),
-        )
-        tracker_conn.commit()
-        print(f"  📝 seed投稿 {post_id}: {seed['content'][:30]}...")
-
-    # seed_commentsをOASISのcommentテーブルに直接INSERT
-    print(f"💬 seed_commentsを注入中 ({len(seed_comments)}件)...")
-    for sc in seed_comments:
-        post_index = sc.get("post_index", 0)
-        post_id = post_id_map.get(post_index)
-        if post_id is None:
-            print(
-                f"  ⚠️ post_index={post_index} に対応する投稿がありません。スキップ。"
-            )
-            continue
-        parent_comment_id = sc.get("parent_comment_id", None)
-        try:
-            oasis_conn.execute(
+            # action_logにseed投稿を記録
+            tr_cur = tracker_conn.cursor()
+            tr_cur.execute(
                 """
-                INSERT INTO comment
-                (post_id, parent_comment_id, user_id, content, num_likes, created_at)
+                INSERT INTO action_log
+                (turn, agent_id, action_type, target_id, content, executed_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    post_id,
-                    parent_comment_id,
-                    sc["author_id"],
-                    sc["content"],
-                    sc.get("num_likes", 0),
-                    0,  # created_at=0（ターン0扱い）
+                    0,
+                    seed["author_id"],
+                    "create_post",
+                    actual_post_id,
+                    json.dumps(
+                        {"post_id": actual_post_id, "content": seed["content"]}, ensure_ascii=False
+                    ),
+                    executed_at,
                 ),
             )
-            oasis_conn.commit()
-            reply_info = (
-                f" (→ comment_id={parent_comment_id}への返信)"
-                if parent_comment_id
-                else ""
-            )
-            print(
-                f"  💬 コメント追加{reply_info} → post_id={post_id}: {sc['content'][:30]}..."
-            )
-        except Exception as e:
-            print(f"  ⚠️ コメント追加失敗: {e}")
+            tracker_conn.commit()
+            print(f"  📝 seed投稿 {actual_post_id}: {seed['content'][:30]}...")
 
-    oasis_conn.close()
+        # seed_commentsをOASISのcommentテーブルに直接INSERT
+        print(f"💬 seed_commentsを注入中 ({len(seed_comments)}件)...")
+        try:
+            oasis_conn.execute("BEGIN")
+            for sc in seed_comments:
+                post_index = sc.get("post_index", 0)
+                post_id = post_id_map.get(post_index)
+                if post_id is None:
+                    print(
+                        f"  ⚠️ post_index={post_index} に対応する投稿がありません。スキップ。"
+                    )
+                    continue
+                parent_comment_id = sc.get("parent_comment_id", None)
+                try:
+                    oasis_conn.execute(
+                        """
+                        INSERT INTO comment
+                        (post_id, parent_comment_id, user_id, content, num_likes, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            post_id,
+                            parent_comment_id,
+                            sc["author_id"],
+                            sc["content"],
+                            sc.get("num_likes", 0),
+                            0,  # created_at=0（ターン0扱い）
+                        ),
+                    )
+                    reply_info = (
+                        f" (→ comment_id={parent_comment_id}への返信)"
+                        if parent_comment_id
+                        else ""
+                    )
+                    print(
+                        f"  💬 コメント追加{reply_info} → post_id={post_id}: {sc['content'][:30]}..."
+                    )
+                except Exception as e:
+                    print(f"  ⚠️ コメント追加失敗: {e}")
+            oasis_conn.execute("COMMIT")
+        except Exception as e:
+            oasis_conn.execute("ROLLBACK")
+            print(f"  ⚠️ seed_comments注入エラー: {e}")
+
+        oasis_conn.close()
 
     # ---------------------------------------------------------
     # 5. 時間を動かす (nターン)
     # ---------------------------------------------------------
     elapsed_history = []  # 全ターンの実行時間を蓄積（分布ログ用）
+
+    # ターンループ外で一度だけ接続を作成し、使い回す（Task 6: DB接続永続化）
+    stats_conn = sqlite3.connect(os.path.abspath(db_path))
 
     try:
         simulation_rounds = args.turns
@@ -629,13 +654,11 @@ async def main():
             print(f"\n⏱️ --- ターン {turn_num} / {simulation_rounds} ---")
             actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
 
-            # ステップ前のtraceの最大IDを記録
+            # ステップ前のtraceの最大IDを記録（永続化したstats_connを使用）
             tr_cur = tracker_conn.cursor()
             try:
-                conn_pre = sqlite3.connect(os.path.abspath(db_path))
-                snap = conn_pre.execute("SELECT MAX(id) FROM trace").fetchone()
+                snap = stats_conn.execute("SELECT MAX(id) FROM trace").fetchone()
                 before_max_id = snap[0] if snap[0] else 0
-                conn_pre.close()
             except Exception as e:
                 print(f"  ⚠️ trace ID取得エラー: {e}")
                 before_max_id = 0
@@ -676,28 +699,25 @@ async def main():
             # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
             if turn_num % MEMORY_COMPRESS_INTERVAL == 0:
                 print(f"  🧠 メモリ圧縮チェック中...")
-                compress_tasks = [
-                    compress_agent_memory(
-                        agent,
-                        ollama_model,
-                        turn_num,
-                        threshold=MEMORY_COMPRESS_THRESHOLD,
-                        keep_recent=MEMORY_KEEP_RECENT,
-                    )
-                    for agent_id, agent in env.agent_graph.get_agents()
-                ]
-                results = await asyncio.gather(*compress_tasks, return_exceptions=True)
-                for (agent_id, _), result in zip(env.agent_graph.get_agents(), results):
-                    if isinstance(result, Exception):
+                for agent_id, agent in env.agent_graph.get_agents():
+                    try:
+                        await compress_agent_memory(
+                            agent,
+                            ollama_model,
+                            turn_num,
+                            threshold=MEMORY_COMPRESS_THRESHOLD,
+                            keep_recent=MEMORY_KEEP_RECENT,
+                        )
+                    except Exception as result:
                         print(f"  ⚠️ Agent {agent_id} のメモリ圧縮に失敗: {result}")
 
             # ステップ後のtraceを取得してDBに記録 & W&B用統計を収集
+            # （永続化したstats_connを使用）
             action_counts = {}
             total_posts = total_likes = total_comments = total_follows = 0
             new_rows = []
             try:
-                conn_post = sqlite3.connect(os.path.abspath(db_path))
-                cur_post = conn_post.cursor()
+                cur_post = stats_conn.cursor()
 
                 new_rows = cur_post.execute(
                     "SELECT user_id, action, info, status FROM trace WHERE id > ?",
@@ -719,7 +739,6 @@ async def main():
                 total_follows = cur_post.execute(
                     "SELECT COUNT(*) FROM follow"
                 ).fetchone()[0]
-                conn_post.close()
             except Exception as e:
                 print(f"  ⚠️ 統計取得エラー: {e}")
 
@@ -799,10 +818,13 @@ async def main():
 
     except KeyboardInterrupt:
         print("\n⚠️ 中断されました。クリーンアップします...")
+    except RuntimeError as e:
+        print(f"❌ 実行時エラー: {e}")
 
     finally:
         await env.close()
         tracker_conn.close()
+        stats_conn.close()
         print("🔒 DB接続をクローズしました。")
 
 

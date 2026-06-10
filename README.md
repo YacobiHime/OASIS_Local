@@ -12,6 +12,30 @@
 * **モデル**: `config.json` で指定（デフォルト: `joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b`）
 * ※ 設定は `config.json` で一元管理されています。環境に合わせて変更してください。
 
+## 設定ファイルの準備
+
+`config.json` は IP アドレス等のローカル情報を含むため Git 管理対象外です。
+初回セットアップ時にテンプレートからコピーして作成してください。
+
+```bash
+cp config.example.json config.json
+```
+
+デフォルトでは `http://localhost:11434/v1` が設定されています。
+リモートサーバー等の Ollama を利用する場合は `config.json` の `ollama_url` を編集するか、
+環境変数 `OLLAMA_URL` を設定してください（環境変数が優先されます）。
+
+```bash
+# Linux / macOS
+export OLLAMA_URL="http://192.168.x.x:11434/v1"
+
+# PowerShell
+$env:OLLAMA_URL = "http://192.168.x.x:11434/v1"
+
+# または .env ファイルを作成して記述（.env は .gitignore 済み）
+echo 'OLLAMA_URL=http://192.168.x.x:11434/v1' > .env
+```
+
 ## 事前準備
 
 ### 1. Ollamaの準備とモデルの取得

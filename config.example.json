@@ -1,5 +1,5 @@
 {
-  "ollama_url": "http://192.168.15.150:11434/v1",
+  "ollama_url": "http://localhost:11434/v1",
   "ollama_model_sim": "joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
   "ollama_model_check": "gemma4:e4b",
   "db_path": "./ollama_twitter.db",
