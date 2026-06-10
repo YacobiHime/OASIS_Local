@@ -128,7 +128,6 @@ def patch_agents_with_event_env(
     EventBus の通知キューを紐付ける。
     """
     for agent_id, agent in agent_graph.agent_mappings.items():
-        agent_id = int(agent_id)
         queue = event_bus.get_agent_queue(agent_id)
         # SocialAction は既存のチャネルを再利用
         agent.env = EventAwareSocialEnvironment(
@@ -239,10 +238,7 @@ async def run_simulation():
         await env.step_event_driven()
 
         elapsed = (datetime.now() - t_start).total_seconds()
-        notif_counts = {
-            aid: len(q)
-            for aid, q in event_bus._agent_queues.items()
-        }
+        notif_counts = event_bus.get_all_queue_sizes()
         woken = len([c for c in notif_counts.values() if c > 0])
 
         wandb.log({

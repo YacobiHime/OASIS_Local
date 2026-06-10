@@ -120,6 +120,10 @@ class EventBus:
             aid for aid, q in self._agent_queues.items() if len(q) > 0
         ]
 
+    def get_all_queue_sizes(self) -> dict[int, int]:
+        """全エージェントの未読通知数を {agent_id: size} で返す。"""
+        return {aid: len(q) for aid, q in self._agent_queues.items()}
+
     # ─────────────────────────────────────
     # イベント発行
     # ─────────────────────────────────────
@@ -134,11 +138,11 @@ class EventBus:
         """
         logger.debug("publish: %s", event.kind)
 
-        # グローバルハンドラ呼び出し
+        # グローバルハンドラ呼び出し (await で確実に完了させる)
         for handler in self._global_handlers.get(event.kind, []):
             result = handler(event)
             if asyncio.iscoroutine(result):
-                asyncio.create_task(result)
+                await result
 
         # エージェント通知の配送
         from oasis.events.event_types import ExternalInfoEvent, EventKind  # noqa: F401
