@@ -94,7 +94,10 @@ class EventDrivenPlatform(Platform):
     async def like_post(self, agent_id: int, post_id: int):
         result = await super().like_post(agent_id, post_id)
         if result.get("success"):
-            author_id = self._get_post_author(post_id) or 0
+            author_id = self._get_post_author(post_id)
+            if author_id is None:
+                logger.warning("like_post: post_author not found for post_id=%d, skipping event", post_id)
+                return result
             await self._pub(PostLikedEvent(
                 sim_time=self._sim_time(),
                 post_id=post_id,
@@ -106,7 +109,10 @@ class EventDrivenPlatform(Platform):
     async def dislike_post(self, agent_id: int, post_id: int):
         result = await super().dislike_post(agent_id, post_id)
         if result.get("success"):
-            author_id = self._get_post_author(post_id) or 0
+            author_id = self._get_post_author(post_id)
+            if author_id is None:
+                logger.warning("dislike_post: post_author not found for post_id=%d, skipping event", post_id)
+                return result
             await self._pub(PostDislikedEvent(
                 sim_time=self._sim_time(),
                 post_id=post_id,
@@ -118,7 +124,10 @@ class EventDrivenPlatform(Platform):
     async def repost(self, agent_id: int, post_id: int):
         result = await super().repost(agent_id, post_id)
         if result.get("success"):
-            author_id = self._get_post_author(post_id) or 0
+            author_id = self._get_post_author(post_id)
+            if author_id is None:
+                logger.warning("repost: original_author not found for post_id=%d, skipping event", post_id)
+                return result
             await self._pub(PostRepostedEvent(
                 sim_time=self._sim_time(),
                 original_post_id=post_id,
@@ -135,7 +144,10 @@ class EventDrivenPlatform(Platform):
                 post_id, content = comment_message[0], comment_message[1]
             else:
                 post_id, content = comment_message[0], ""
-            author_id = self._get_post_author(post_id) or 0
+            author_id = self._get_post_author(post_id)
+            if author_id is None:
+                logger.warning("create_comment: post_author not found for post_id=%d, skipping event", post_id)
+                return result
             await self._pub(PostCommentedEvent(
                 sim_time=self._sim_time(),
                 comment_id=result["comment_id"],

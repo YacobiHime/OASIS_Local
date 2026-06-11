@@ -17,7 +17,7 @@ import logging
 from collections import defaultdict
 from typing import Awaitable, Callable, Union
 
-from oasis.events.event_types import BaseEvent, EventKind
+from oasis.events.event_types import BaseEvent, EventKind, ExternalInfoEvent
 
 logger = logging.getLogger("oasis.events.bus")
 
@@ -145,8 +145,6 @@ class EventBus:
                 await result
 
         # エージェント通知の配送
-        from oasis.events.event_types import ExternalInfoEvent, EventKind  # noqa: F401
-
         if isinstance(event, ExternalInfoEvent):
             targets = event.target_agent_ids or list(self._agent_queues.keys())
             for aid in targets:
@@ -177,7 +175,6 @@ class EventBus:
                 result = handler(event)
                 # コルーチンは無視 (ループなし)
 
-            from oasis.events.event_types import ExternalInfoEvent  # noqa: F401
             if isinstance(event, ExternalInfoEvent):
                 targets = (
                     event.target_agent_ids or list(self._agent_queues.keys())

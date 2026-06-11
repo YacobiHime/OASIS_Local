@@ -26,17 +26,16 @@ import asyncio
 import json
 import logging
 import os
-import sqlite3
 from datetime import datetime
 
 import wandb
 
-from camel.models import ModelFactory, ModelManager
+from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 
 import oasis
 from oasis import (
-    ActionType, LLMAction, ManualAction,
+    ActionType,
     AgentGraph, SocialAgent, UserInfo,
 )
 from oasis.clock.clock import Clock
