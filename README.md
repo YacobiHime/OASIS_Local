@@ -5,7 +5,7 @@
 
 ## 環境構成
 
-* **OS**: Windows (PowerShell) 推奨
+* **OS**: Windows (PowerShell) / Linux 推奨
 * **Python**: 3.10 または 3.11
 * **パッケージ管理**: pip (Python標準)
 * **LLMバックエンド**: Ollama
@@ -18,7 +18,11 @@
 初回セットアップ時にテンプレートからコピーして作成してください。
 
 ```bash
+# 通常の sumika.py を使う場合
 cp config.example.json config.json
+
+# イベント駆動版 sumika_event.py を使う場合
+cp config.example.event.json config.json
 ```
 
 デフォルトでは `http://localhost:11434/v1` が設定されています。
@@ -59,8 +63,8 @@ Python 3.10 または 3.11 を使用し、以下の手順で環境を整えま�
 python -m venv .venv
 
 # 仮想環境の有効化
-source .venv/bin/activate #linux
-.venv\Scripts\activate # powershell
+source .venv/bin/activate  # Linux
+.venv\Scripts\activate     # PowerShell
 
 # 必須パッケージの導入
 pip install camel-oasis
@@ -74,35 +78,63 @@ pip install camel-oasis
 pip install wandb
 ```
 
+### 3. イベント駆動版を使う場合の追加パッケージ
+
+`sumika_event.py`（SearXNG連携）を使用する場合、以下のパッケージも導入してください：
+
+```powershell
+pip install aiohttp
+```
+
+また、SearXNG 検索サーバーがネットワーク上で利用可能である必要があります。
+
 ## ファイル構成
 
-* **実行プログラム**
-* `sumika.py`: **Twitter (X) シミュレーション用**の主実行ファイル。
-* 設定ファイル（JSON）からエージェントを生成し、自律行動（投稿・返信・いいね・拡散など）を行います。
-* 引数で設定ファイルを指定可能です。
+### 実行プログラム
 
+* **`sumika.py`**: **Twitter (X) シミュレーション用**の主実行ファイル（標準版）。
+  設定ファイル（JSON）からエージェントを生成し、全エージェントが毎ターン自律行動（投稿・返信・いいね・拡散など）を行います。
+* **`sumika_event.py`**: **イベント駆動版**のシミュレーション実行ファイル。
+  EventBus によるイベント伝播、SearXNG からの外部情報自動注入、通知ベースの選択的エージェント起動を行います。詳しくは [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md) を参照。
 * `run_llama_twitter.py`: 以前使用していたシミュレーション用プログラム（Llama 3.2使用）。
 
-* **ツール**
-* `check.py`: シミュレーション結果（データベース）の中身を確認・保存するプログラム。
-* タイムラインを階層状に表示します。
-* LLMを使用して「何が起きたか」の要約報告書を自動生成します。
-* 実行結果を `result_data/` フォルダに自動保存します。
-* **差分更新機能**: 2回目以降の実行では、新しいデータのみが追加されます（全件コピーではなく）。
+### ツール
 
-* **Blueskyデータ収集ツール**（実データを使ったシミュレーション用）
+* `check.py`: シミュレーション結果（データベース）の中身を確認・保存するプログラム。
+  タイムラインを階層状に表示します。LLMを使用して「何が起きたか」の要約報告書を自動生成します。
+  実行結果を `result_data/` フォルダに自動保存します。**差分更新機能**: 2回目以降の実行では、新しいデータのみが追加されます。
+* `deploy.py`: デプロイ用スクリプト。
+
+### Blueskyデータ収集ツール（実データを使ったシミュレーション用）
+
 * `collect_bluesky.py`: BlueskyのJetstreamから日本語ユーザーの投稿・プロフィールを収集し、`raw_users.json` に保存します。
 * `make_gemini_prompt.py`: `raw_users.json` を読み込み、GeminiチャットにコピペするだけでOASIS用ペルソナ・seed投稿を生成できるプロンプトを `gemini_prompt.txt` に出力します。
+* `generate_profiles.py`: プロファイル生成ツール。
 
-* **データ・設定**
-* `config.json`: **シミュレーションの設定ファイル**（Ollama URL、モデル名、DBパスなどを指定）。
-* `profiles/`: エージェントの属性情報を格納するフォルダ（例: `test1.json`, `bluesky_profiles.json`）。
+### データ・設定
+
+* `config.json`: **シミュレーションの設定ファイル**（Ollama URL、モデル名、DBパスなどを指定）。Git管理対象外。
+* `config.example.json`: 標準版（`sumika.py`）用の設定テンプレート。
+* `config.example.event.json`: イベント駆動版（`sumika_event.py`）用の設定テンプレート。SearXNG URL、トピック一覧などを含む。
+* `profiles/`: エージェントの属性情報を格納するフォルダ（例: `test.json`, `bluesky_profiles.json`）。
 * `seeds/`: シミュレーション開始時の初期投稿を格納するフォルダ（例: `seed_posts.json`, `bluesky_seeds.json`）。
 * `raw_users.json`: `collect_bluesky.py` で収集したBlueskyユーザーの生データ。
 * `gemini_prompt.txt`: `make_gemini_prompt.py` で生成したGeminiへの入力プロンプト。
 * `ollama_twitter.db`: シミュレーション結果が保存されるデータベース。
 * `sumika_tracker.db`: シミュレーションの追跡データ（ターン統計、行動ログ）。
 * `result_data/`: `check.py` で出力された記録ファイルの保存先。
+
+### イベント駆動アーキテクチャモジュール (`oasis/`)
+
+| パス | 役割 |
+|------|------|
+| `oasis/events/event_bus.py` | 非同期イベントバス（pub/sub + エージェント別通知キュー） |
+| `oasis/events/event_types.py` | 全イベントの dataclass 定義（PostCreated, UserFollowed, ExternalInfo 等） |
+| `oasis/social_platform/platform_events.py` | `EventDrivenPlatform` — Platform の全アクションをオーバーライドし、イベントを発行 |
+| `oasis/environment/env_event_driven.py` | `EventDrivenEnv` — 通知ベースの選択的エージェント起動ロジック |
+| `oasis/information/injector.py` | `InformationInjector` — SearXNG から定期的に外部情報を注入 |
+| `oasis/information/searxng_client.py` | `SearXNGClient` — SearXNG JSON API の非同期クライアント |
+| `oasis/social_agent/agent_environment_event.py` | `EventAwareSocialEnvironment` — 通知をエージェントのプロンプトに自動挿入 |
 
 ## 実行方法
 
@@ -111,12 +143,13 @@ pip install wandb
 絵文字を正しく扱うため、実行前に必ず以下のコマンドでUTF-8モードを有効にしてください。
 
 ```powershell
+# PowerShell
 $env:PYTHONUTF8 = "1"
 ```
 
-### 2. シミュレーションの実行 (`sumika.py`)
+### 2. シミュレーションの実行
 
-以下のコマンドでシミュレーションを開始します。
+#### 標準版 (`sumika.py`)
 
 ```powershell
 # 標準設定（5ターン実行）
@@ -125,7 +158,7 @@ python sumika.py
 # ターン数を指定
 python sumika.py --turns 50
 
-# ssh接続で仮想マシンを使う場合
+# SSH接続で仮想マシンを使う場合
 nohup python sumika.py --turns 15 > oasis.log 2>&1 &
 
 # W&Bによる実験追跡を無効化する場合
@@ -141,7 +174,35 @@ python sumika.py --turns 10 --resume
 - **Ctrl+C対応**: 中断時もDB接続が正しくクローズされます
 - **差分更新**: `check.py` 実行時にDBがマージされ、既存データが引き継がれます
 
-実行すると、エージェントたちが初期の投稿に対して反応したり、自身の関心に基づいて新しい投稿を行ったりします。
+#### イベント駆動版 (`sumika_event.py`)
+
+```powershell
+# 設定テンプレートをコピーして config.json を作成
+cp config.example.event.json config.json
+
+# config.json の searxng_url を環境に合わせて編集
+# 実行
+python sumika_event.py --turns 20
+```
+
+**標準版との違い:**
+- **イベント駆動**: 全エージェントが毎ターン行動するのではなく、通知が届いたエージェント + ランダムに選ばれた少数のエージェントのみが起動
+- **外部情報注入**: SearXNG 経由で定期的にニュース記事を取得し、シミュレーション内に「ニュースボット」として投稿
+- **通知システム**: 投稿・いいね・フォロー等のイベントが関連エージェントにリアルタイム通知される
+- **W&B連携**: ステップごとの実行時間・通知ありエージェント数を自動ログ
+
+**`config.json` のイベント駆動設定 (`event_driven` セクション):**
+
+| パラメータ | 説明 | デフォルト |
+|---|---|---|
+| `enabled` | イベント駆動モードを有効にする | `true` |
+| `baseline_wakeup_rate` | 通知なしエージェントの毎ステップ起動率 | `0.1` |
+| `inject_interval_steps` | SearXNG情報注入の間隔（ステップ数） | `5` |
+| `topics` | SearXNGで検索するトピック一覧 | `["AI倫理", ...]` |
+| `num_results_per_topic` | 1トピックあたりの取得件数 | `3` |
+| `searxng_url` | SearXNGサーバーのURL | `"http://192.168.15.146:8080"` |
+| `news_bot_agent_id` | ニュース投稿に使うエージェントID | `0` |
+| `categories` | SearXNG検索カテゴリ | `"general"` |
 
 ### 3. 結果の確認と保存 (`check.py`)
 
@@ -152,9 +213,9 @@ python check.py
 ```
 
 * **機能**:
-* タイムラインの表示（返信や引用再投稿も階層状に表示）
-* エージェントの行動記録の表示
-* **AIによる状況要約**: 「誰と誰が仲が良いか」「どんな話題が出たか」などをLLMが分析して解説します。
+  * タイムラインの表示（返信や引用再投稿も階層状に表示）
+  * エージェントの行動記録の表示
+  * **AIによる状況要約**: 「誰と誰が仲が良いか」「どんな話題が出たか」などをLLMが分析して解説します。
 
 * `result_data/` フォルダ内に「日時付きの記録ファイル（例: `2026-01-25_12-00-00.txt`）」が自動保存されます。
 
@@ -231,6 +292,7 @@ seeds/
 
 以下のファイル・フォルダは `.gitignore` により管理対象から除外されています。
 
+* `config.json` (設定ファイル)
 * `result_data/` (実験記録)
 * `*.db` (データベースファイル)
 * `*.log` (記録ファイル)
