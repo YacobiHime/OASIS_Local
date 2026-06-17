@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 import argparse
+import random
 import sqlite3
 from datetime import datetime
 
@@ -296,6 +297,14 @@ async def main():
     # プロファイルをロード
     profiles = load_profiles(args.profiles)
 
+    # ★タイムエンジン用：プロファイルをIDで引けるようにしておく
+    profiles_by_id = {p["id"]: p for p in profiles}
+
+    # 1ターンあたりの実時間（分）。active_threshold の時間帯判定に使う。
+    TIME_STEP_MINUTES = CONFIG.get("time_step_minutes", 3)
+    # active_threshold を持たないプロファイル向けのフォールバック（常に100%行動 = 旧挙動と同じ）
+    DEFAULT_ACTIVE_THRESHOLD = [1.0] * 24
+
     # ---------------------------------------------------------
     # Weights & Biases の初期化
     # ---------------------------------------------------------
@@ -312,6 +321,9 @@ async def main():
                     "memory_compress_threshold": MEMORY_COMPRESS_THRESHOLD,
                     "memory_keep_recent": MEMORY_KEEP_RECENT,
                     "memory_compress_interval": MEMORY_COMPRESS_INTERVAL,
+                    "recsys_type": CONFIG.get("recsys_type", "twitter"),
+                    "clock_k": CONFIG.get("clock_k", 20),
+                    "time_step_minutes": TIME_STEP_MINUTES,
                 },
             )
             print(f"📊 W&B初期化完了: {wandb.run.name}")
@@ -422,9 +434,28 @@ async def main():
     else:
         print(f"♻️  resumeモード: 既存のDBを引き継ぎます")
 
+    # ★④ Clock を明示的に作成し、Platform に渡す。
+    # k は「実時間1秒に対してシミュレーション内時刻を何倍速で進めるか」の係数。
+    # ②のタイムエンジンでは「1 time step(=env.step呼び出し1回) = TIME_STEP_MINUTES分」
+    # という独自の時間マッピングをターンループ側で行うため、この k 自体は
+    # Twitter系シミュレーション（recsys_type="twitter"/"twhin-bert"）の挙動には
+    # 直接影響しない（current_time は sandbox_clock.get_time_step() の単純な
+    # ステップ整数値が使われるため）。ただし将来 Reddit 系の時刻計算
+    # （sandbox_clock.time_transfer）を併用する場合や、ログ上の一貫性のために
+    # 明示的に渡しておく。
+    sandbox_clock = Clock(k=CONFIG.get("clock_k", 20))
+
     platform = Platform(
         db_path=db_path,
-        recsys_type="twitter",
+        # ★③ RecSys種別。論文と揃えるなら "twhin-bert"（Twitter 70億投稿で学習済み、
+        # 興味マッチング精度が高い）だが、初回起動時にモデル自動DL（約400MB）が走り、
+        # GPUが無い場合はCPU推論で低速になる。ローカル環境をまず安定させたい場合は
+        # config.json の "recsys_type" を "twitter" のままにしておくこと。
+        # 切り替える場合は config.json の "recsys_type": "twhin-bert" を指定するだけでよい
+        # （pip依存の torch / transformers は sentence-transformers の依存として
+        # 既に入っている可能性が高いので、未導入の場合のみ追加インストールすること）。
+        recsys_type=CONFIG.get("recsys_type", "twitter"),
+        sandbox_clock=sandbox_clock,
         # 1回のrefreshで表示される投稿数（デフォルト1→4）
         refresh_rec_post_count=4,
         # 推薦バッファの最大投稿数（デフォルト2→8）
@@ -663,8 +694,32 @@ async def main():
         simulation_rounds = args.turns
         for i in range(simulation_rounds):
             turn_num = i + 1
-            print(f"\n⏱️ --- ターン {turn_num} / {simulation_rounds} ---")
-            actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+            # ★② 現在のシミュレーション時刻の「時間帯」を取得（0〜23）
+            # 1 time step（env.step呼び出し1回）= TIME_STEP_MINUTES 分、という単純な
+            # 線形マッピングで「今は何時台か」を計算する。
+            current_hour = (turn_num * TIME_STEP_MINUTES // 60) % 24
+            print(
+                f"\n⏱️ --- ターン {turn_num} / {simulation_rounds} "
+                f"(現在 {current_hour:02d}時台) ---"
+            )
+
+            # 各エージェントの active_threshold[current_hour] を確率として
+            # 行動するかどうかを抽選する。外れたエージェントは actions に含めず
+            # → そのターンは何もしない（env.step は actions に無いエージェントを
+            # 単純にスキップする）。
+            actions = {}
+            agent_list = env.agent_graph.get_agents()
+            for agent_id, agent in agent_list:
+                profile = profiles_by_id.get(agent_id, {})
+                thresholds = profile.get("active_threshold", DEFAULT_ACTIVE_THRESHOLD)
+                prob = thresholds[current_hour]
+                if random.random() < prob:
+                    actions[agent] = LLMAction()
+            active_count = len(actions)
+            total_count = len(agent_list)
+            print(
+                f"  🎲 アクティブ判定: {active_count}/{total_count} 人が行動します"
+            )
 
             # ステップ前のtraceの最大IDを記録（永続化したstats_connを使用）
             tr_cur = tracker_conn.cursor()
@@ -803,6 +858,9 @@ async def main():
                         "統計/累計コメント数":      total_comments,
                         "統計/累計フォロー数":      total_follows,
                         "統計/処理時間分布":        wandb.Histogram(elapsed_history),
+                        "統計/現在の時間帯":        current_hour,
+                        "統計/アクティブ人数":      active_count,
+                        "統計/アクティブ率":        active_count / total_count if total_count else 0.0,
                         **{ACTION_LABEL_JA.get(k, f"行動/{k}"): v
                            for k, v in action_counts.items()},
                     }
