@@ -127,10 +127,20 @@ class SocialAgent(ChatAgent):
         user_msg = BaseMessage.make_user_message(
             role_name="User",
             content=(
-                f"Please perform social media actions after observing the "
-                f"platform environments. Notice that don't limit your "
-                f"actions for example to just like the posts. "
-                f"Here is your social media environment: {env_prompt}"))
+                f"上記は今のあなたのSNS環境（タイムライン含む）です。"
+                f"キャラクター設定に沿って、必ず何か1つ以上の行動をとってください。\n"
+                f"とれる行動の例:\n"
+                f"- 投稿する(create_post): 思ったこと、タイムラインの話題への反応など\n"
+                f"- いいねを押す(like_post): 共感・面白いと感じた投稿に\n"
+                f"- リポストする(repost) / 引用する(quote_post): 広げたい投稿を\n"
+                f"- コメントする(create_comment): 議論したい・返信したい投稿に\n"
+                f"- フォローする(follow) / ミュートする(mute): ユーザーに対して\n"
+                f"注意:\n"
+                f"- タイムラインの取得は既に済んでいるので、改めて取得する必要はありません。\n"
+                f"- 「何もしない(do_nothing)」は本当に迷ったときだけにし、"
+                f"毎回何もしないのは避けてください。\n"
+                f"- 投稿やいいねばかりでなく、状況に応じて多様な行動を選んでください。\n"
+                f"現在の環境: {env_prompt}"))
         try:
             agent_log.info(
                 f"Agent {self.social_agent_id} observing environment: "

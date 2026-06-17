@@ -156,6 +156,115 @@ def get_turn_stats_text(conn):
     return "\n".join(lines) + "\n"
 
 
+# 行動種別（action）の表示順と日本語ラベル。
+# ActionType（oasis/social_platform/typing.py）に準拠。
+ACTION_LABELS = [
+    ("create_post", "📝 投稿"),
+    ("repost", "🔁 リポスト"),
+    ("quote_post", "🔃 引用"),
+    ("create_comment", "💬 コメント"),
+    ("like_post", "❤️  投稿いいね"),
+    ("unlike_post", "💔 投稿いいね解除"),
+    ("dislike_post", "👎 投稿低評価"),
+    ("like_comment", "❤️  コメントいいね"),
+    ("unlike_comment", "💔 コメントいいね解除"),
+    ("dislike_comment", "👎 コメント低評価"),
+    ("follow", "👥 フォロー"),
+    ("unfollow", "🚫 フォロー解除"),
+    ("mute", "🤐 ミュート"),
+    ("unmute", "🔊 ミュート解除"),
+    ("report_post", "🚩 通報"),
+    ("refresh", "🔄 タイムライン更新"),
+    ("search_posts", "🔍 投稿検索"),
+    ("search_user", "🔍 ユーザー検索"),
+    ("trend", "📈 トレンド"),
+    ("sign_up", "✨ サインアップ"),
+    ("do_nothing", "😴 何もしない"),
+]
+
+
+def _cjk_len(s):
+    """表示幅を概算（全角文字を幅2とみなす）"""
+    import unicodedata
+
+    width = 0
+    for ch in str(s):
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
+
+
+def _ljust(s, width):
+    """表示幅で左詰め（日本語の表揃え用）"""
+    s = str(s)
+    pad = width - _cjk_len(s)
+    return s + " " * max(0, pad)
+
+
+def get_action_stats_text(conn):
+    """エージェントの行動種別ごとの集計（成功/失敗別）を生成する"""
+    try:
+        df = pd.read_sql_query(
+            "SELECT action, status, COUNT(*) AS cnt "
+            "FROM mirror_trace GROUP BY action, status",
+            conn,
+        )
+    except Exception:
+        return "（行動統計データなし）\n"
+
+    if df.empty:
+        return "（行動統計データなし）\n"
+
+    # action -> {status -> count}
+    stats = {}
+    for _, row in df.iterrows():
+        action = row["action"]
+        status = row["status"] if row["status"] else "success"
+        stats.setdefault(action, {})
+        stats[action][status] = stats[action].get(status, 0) + int(row["cnt"])
+
+    # 定義済みラベルの順に表示し、未定義の行動は末尾に並べる
+    known = {a for a, _ in ACTION_LABELS}
+    ordered = [a for a, _ in ACTION_LABELS if a in stats]
+    ordered.extend(sorted(a for a in stats if a not in known))
+    label_map = dict(ACTION_LABELS)
+
+    total_all = sum(c for s in stats.values() for c in s.values())
+    total_success = sum(s.get("success", 0) for s in stats.values())
+    total_fail = total_all - total_success
+
+    # 実際にアクションが起きた（do_nothing/refresh/sign_up以外）の合計
+    passive = {"do_nothing", "refresh", "sign_up"}
+    active_count = sum(
+        c
+        for a, s in stats.items()
+        if a not in passive
+        for c in s.values()
+    )
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append("📊 【エージェント行動統計】")
+    lines.append("=" * 60)
+    lines.append(f"  総行動数             : {total_all}")
+    lines.append(
+        f"  能動的行動数         : {active_count}"
+        f"  （投稿/リアクション/フォロー等）"
+    )
+    lines.append(f"  成功 / 失敗          : {total_success} / {total_fail}")
+    lines.append("-" * 60)
+    lines.append(f"  {_ljust('行動', 22)}{'成功':>9}{'失敗':>8}{'合計':>8}")
+    lines.append("-" * 60)
+    for action in ordered:
+        label = label_map.get(action, f"❓ {action}")
+        success = stats[action].get("success", 0)
+        fail = sum(c for st, c in stats[action].items() if st != "success")
+        total = success + fail
+        lines.append(f"  {_ljust(label, 22)}{success:>9}{fail:>8}{total:>8}")
+    lines.append("=" * 60)
+
+    return "\n".join(lines) + "\n"
+
+
 def get_timeline_text(conn, tracker_conn=None):
     """投稿とコメントをスレッド形式で生成する"""
     text = "【📱 投稿タイムライン (スレッド表示)】\n"
@@ -508,10 +617,19 @@ def show_and_save_results():
     action_text = get_action_log_text(conn)
     impression_text = get_impression_text(conn)
     turn_stats_text = get_turn_stats_text(conn)
+    action_stats_text = get_action_stats_text(conn)
     conn.close()
 
     full_log_text = (
-        turn_stats_text + "\n" + timeline_text + "\n" + action_text + "\n" + impression_text
+        turn_stats_text
+        + "\n"
+        + action_stats_text
+        + "\n"
+        + timeline_text
+        + "\n"
+        + action_text
+        + "\n"
+        + impression_text
     )
 
     if ENABLE_SUMMARY:

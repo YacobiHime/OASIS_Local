@@ -363,7 +363,10 @@ async def main():
     # ---------------------------------------------------------
     available_actions = [
         # --- タイムライン ---
-        ActionType.REFRESH,              # タイムラインを更新（RecSysから新着投稿を取得）★最重要
+        # ※ REFRESH は含めない: 環境プロンプト構築時に get_posts_env() が
+        #    自動でタイムラインを取得するため、LLMのツール一覧にあると
+        #    ツール呼び出しの苦手なモデルが refresh だけ選んでターンを
+        #    消費してしまう（＝何もしないのと同じ）。自動取得は継続される。
         ActionType.TREND,                # トレンドを確認
         ActionType.SEARCH_POSTS,         # キーワードで投稿を検索
         ActionType.SEARCH_USER,          # ユーザーを検索
@@ -695,9 +698,13 @@ async def main():
         for i in range(simulation_rounds):
             turn_num = i + 1
             # ★② 現在のシミュレーション時刻の「時間帯」を取得（0〜23）
-            # 1 time step（env.step呼び出し1回）= TIME_STEP_MINUTES 分、という単純な
-            # 線形マッピングで「今は何時台か」を計算する。
-            current_hour = (turn_num * TIME_STEP_MINUTES // 60) % 24
+            # シミュレーション全体で1日（24時間）を均等にカバーするように進める。
+            # かつては「1ターン=TIME_STEP_MINUTES分」の線形マッピングだったが、
+            # ターン数が少ないとずっと深夜0時台（active_threshold が最小の5%）に
+            # 固定され、ほとんどのエージェントが一度も行動しない問題があった。
+            # この式ならターン数によらず昼間（9〜18時）の高アクティビティ帯を
+            # 必ず通るため、現実的な時間帯別の活動起伏を再現できる。
+            current_hour = int((turn_num - 1) * 24 / max(simulation_rounds, 1)) % 24
             print(
                 f"\n⏱️ --- ターン {turn_num} / {simulation_rounds} "
                 f"(現在 {current_hour:02d}時台) ---"
