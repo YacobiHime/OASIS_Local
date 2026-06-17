@@ -417,6 +417,9 @@ async def main():
             agent_graph=agent_graph,
             model=ollama_model,
             available_actions=available_actions,
+            # A2: 1ターンに複数アクション（ツール連鎖）を許可。テキストのみ
+            # ターンの改善は perform_action_by_llm 側の空振りリトライが担う。
+            max_iteration=2,
         )
 
         agent_graph.add_agent(agent)

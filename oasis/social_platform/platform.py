@@ -19,6 +19,7 @@ import os
 import random
 import sqlite3
 import sys
+from collections import deque
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -112,6 +113,11 @@ class Platform:
         # rec prob between random and personalized
         self.rec_prob = 0.7
         self.use_openai_embedding = use_openai_embedding
+
+        # B1: タイムライン活性化。各エージェントが直近で表示された投稿を
+        # 記憶し、毎ターン同じ投稿が出続けるのを防ぐ。履歴は揮発性（resume で
+        # Platform 再生成時にリセットされる）で問題ない。
+        self._recently_shown: dict[int, deque] = {}
 
         # Parameters for the platform's internal trending rules
         self.trend_num_days = 7
@@ -366,13 +372,28 @@ class Platform:
             rec_results = self.db_cursor.fetchall()
 
             post_ids = [row[0] for row in rec_results]
-            selected_post_ids = post_ids
-            # If the number of post_ids >= self.refresh_rec_post_count,
-            # randomly select a specified number of post_ids
-            if len(selected_post_ids) >= self.refresh_rec_post_count:
-                selected_post_ids = random.sample(
-                    selected_post_ids, self.refresh_rec_post_count
-                )
+            # B1: 直近で表示した投稿（履歴）を優先的に除外し、毎ターン異なる
+            # 投稿がタイムラインに回るようにする。未表示枠が足りない場合は
+            # 履歴入りから補充する（枯渇時のフォールバック）。
+            history = self._recently_shown.setdefault(
+                user_id,
+                deque(
+                    maxlen=self.refresh_rec_post_count + self.following_post_count
+                ),
+            )
+            fresh = [p for p in post_ids if p not in history]
+            stale = [p for p in post_ids if p in history]
+            need = self.refresh_rec_post_count
+            if len(post_ids) >= need:
+                # 未表示を優先し、足りない分は履歴入りからランダム補充
+                take = fresh[:need]
+                if len(take) < need and stale:
+                    take = take + random.sample(
+                        stale, min(need - len(take), len(stale))
+                    )
+                selected_post_ids = take
+            else:
+                selected_post_ids = post_ids
 
             if self.recsys_type != RecsysType.REDDIT:
                 # Retrieve posts from following (in network)
@@ -398,6 +419,9 @@ class Platform:
 
                 selected_post_ids = following_posts_ids + selected_post_ids
                 selected_post_ids = list(set(selected_post_ids))
+
+            # 表示した投稿を履歴に記録（deque で古いものから自動排出）
+            history.extend(selected_post_ids)
 
             placeholders = ", ".join("?" for _ in selected_post_ids)
 

@@ -51,6 +51,11 @@ if "sphinx" not in sys.modules:
 
 ALL_SOCIAL_ACTIONS = [action.value for action in ActionType]
 
+# A1: LLMがツールを呼ばなかった（テキストのみ返した）場合の再試行回数。
+# camel の astep はツール不呼び出しで即終了するため、perform_action_by_llm
+# 側で再催促メッセージを送りリトライする。実時間との兼ね合いで2回まで。
+MAX_ACTION_RETRY = 2
+
 
 class SocialAgent(ChatAgent):
     r"""Social Agent."""
@@ -124,41 +129,75 @@ class SocialAgent(ChatAgent):
 
     async def perform_action_by_llm(self):
         env_prompt = await self.env.to_text_prompt()
-        user_msg = BaseMessage.make_user_message(
+        # A3/B2: タイムラインの既存投稿へのリアクションを優先し、フォローで
+        # タイムラインを広げるよう誘導する。投稿(create_post)ばかりになるのを防ぐ。
+        first_msg = BaseMessage.make_user_message(
             role_name="User",
             content=(
                 f"上記は今のあなたのSNS環境（タイムライン含む）です。"
                 f"キャラクター設定に沿って、必ず何か1つ以上の行動をとってください。\n"
+                f"【優先行動】タイムラインに投稿が表示されている場合、まずその中から"
+                f"1件を選んでリアクション（like_post / create_comment / repost / "
+                f"quote_post）を行ってください。自分の発信(create_post)よりも、"
+                f"他者へのリアクションを優先してください。\n"
                 f"とれる行動の例:\n"
-                f"- 投稿する(create_post): 思ったこと、タイムラインの話題への反応など\n"
                 f"- いいねを押す(like_post): 共感・面白いと感じた投稿に\n"
                 f"- リポストする(repost) / 引用する(quote_post): 広げたい投稿を\n"
                 f"- コメントする(create_comment): 議論したい・返信したい投稿に\n"
-                f"- フォローする(follow) / ミュートする(mute): ユーザーに対して\n"
+                f"- 投稿する(create_post): 思ったこと、タイムラインの話題への反応など\n"
+                f"- フォローする(follow): 興味を持ったユーザーをフォローして"
+                f"タイムラインを広げる / ミュートする(mute): 不快なユーザーに\n"
                 f"注意:\n"
                 f"- タイムラインの取得は既に済んでいるので、改めて取得する必要はありません。\n"
                 f"- 「何もしない(do_nothing)」は本当に迷ったときだけにし、"
                 f"毎回何もしないのは避けてください。\n"
                 f"- 投稿やいいねばかりでなく、状況に応じて多様な行動を選んでください。\n"
                 f"現在の環境: {env_prompt}"))
+        # A1: ツールを呼ばなかった（テキストのみ返した）場合の再催促メッセージ。
+        # camel の astep はツール不呼び出しで即終了するため、リトライはここで行う。
+        retry_msg = BaseMessage.make_user_message(
+            role_name="User",
+            content=(
+                f"あなたはまだ行動を起こしていません（ツール呼び出しがありませんでした）。\n"
+                f"タイムラインの中から1件選び、ただちに以下のいずれかを"
+                f"1つ呼び出してください: like_post / create_comment / repost / "
+                f"quote_post / follow / create_post\n"
+                f"テキストだけで答えず、必ずツール呼び出しを生成すること。"
+                f"現在の環境: {env_prompt}"))
         try:
             agent_log.info(
                 f"Agent {self.social_agent_id} observing environment: "
                 f"{env_prompt}")
-            response = await self.astep(user_msg)
-            for tool_call in response.info['tool_calls']:
-                action_name = tool_call.tool_name
-                args = tool_call.args
-                agent_log.info(f"Agent {self.social_agent_id} performed "
-                               f"action: {action_name} with args: {args}")
-                if action_name not in ALL_SOCIAL_ACTIONS:
-                    agent_log.info(
-                        f"Agent {self.social_agent_id} get the result: "
-                        f"{tool_call.result}")
+            response = await self.astep(first_msg)
+            self._log_tool_calls(response)
+            # A1: ツールを呼ばなかった場合は再催促メッセージでリトライ
+            retries = 0
+            while (
+                not response.info.get('tool_calls')
+                and retries < MAX_ACTION_RETRY
+            ):
+                retries += 1
+                agent_log.info(
+                    f"Agent {self.social_agent_id} made no tool call; "
+                    f"retrying ({retries}/{MAX_ACTION_RETRY})")
+                response = await self.astep(retry_msg)
+                self._log_tool_calls(response)
             return response
         except Exception as e:
             agent_log.error(f"Agent {self.social_agent_id} error: {e}")
             return e
+
+    def _log_tool_calls(self, response):
+        r"""response の tool_calls をログ出力する（初回・リトライ共通処理）。"""
+        for tool_call in response.info.get('tool_calls', []):
+            action_name = tool_call.tool_name
+            args = tool_call.args
+            agent_log.info(f"Agent {self.social_agent_id} performed "
+                           f"action: {action_name} with args: {args}")
+            if action_name not in ALL_SOCIAL_ACTIONS:
+                agent_log.info(
+                    f"Agent {self.social_agent_id} get the result: "
+                    f"{tool_call.result}")
 
     async def perform_test(self):
         """
