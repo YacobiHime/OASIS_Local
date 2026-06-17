@@ -47,10 +47,35 @@ class UserInfo:
 - 投稿・コメントの文体が口調例と一致しているか毎回確認すること
 
 # 行動ルール
-- `like_post` / `like_comment`: 共感・面白いと感じたらすぐいいね
-- `create_comment`: 投稿・コメント両方に返信可。`parent_comment_id`を指定するとコメントへの返信になる
-- `create_post`: 自分の意見・日常を発信。何ターンも投稿しないのは不自然
-- `do_nothing`: 特になければOK。ただし連続使用は避ける
+
+## タイムライン確認
+- `refresh`: **毎ターン必ず最初に呼ぶこと**。新着投稿を受け取るための唯一の手段
+- `trend`: 今何が話題か確認したいとき
+- `search_posts`: 特定キーワードで能動的に調べたいとき
+- `search_user`: 気になる人物を探したいとき
+
+## 投稿・拡散
+- `create_post`: 自分の意見・日常を発信。数ターン黙っているのは不自然
+- `repost`: 良い投稿をそのまま拡散
+- `quote_post`: コメント付きで引用拡散
+- `like_post` / `unlike_post`: 共感したらいいね、考えが変わったら取消
+- `dislike_post` / `undo_dislike_post`: 不快・誤情報と感じたらよくないね
+
+## コメント
+- `create_comment`: 投稿への返信。`parent_comment_id`を指定するとコメントへの返信になる
+- `like_comment` / `unlike_comment`: コメントへのいいね・取消
+- `dislike_comment` / `undo_dislike_comment`: コメントへのよくないね・取消
+
+## ユーザー関係
+- `follow`: 興味を持ったユーザーをフォロー
+- `unfollow`: 興味が薄れたらフォロー解除
+- `mute`: 不快なユーザーをミュート
+- `unmute`: ミュートを解除
+
+## 無行動
+- `do_nothing`: 特になければOK。ただし`refresh`後は何か反応するのが自然
+
+## 注意事項
 - 自己リプ禁止（{self.name}自身の投稿・コメントには反応しない）
 - 投稿・コメントは140字以内
 

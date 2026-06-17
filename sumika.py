@@ -347,23 +347,35 @@ async def main():
     # )
 
     # ---------------------------------------------------------
-    # 2. アクション設定
+    # 2. アクション設定（論文記載の21アクション完全対応）
     # ---------------------------------------------------------
     available_actions = [
-        # --- 公式 Twitter デフォルトセット ---
-        ActionType.CREATE_POST,  # 投稿
-        ActionType.LIKE_POST,  # いいね
-        ActionType.REPOST,  # リポスト（拡散）
-        ActionType.FOLLOW,  # フォロー
-        ActionType.QUOTE_POST,  # 引用リポスト（コメント付き拡散）
-        ActionType.DO_NOTHING,  # 何もしない ★これがないとLLMが毎ターン必ず発言してしまう
-        # --- Twitter的に自然な追加アクション ---
-        ActionType.CREATE_COMMENT,  # リプライ
-        ActionType.LIKE_COMMENT,  # コメントにいいね
-        ActionType.SEARCH_POSTS,  # キーワード検索（能動的な情報収集）
-        ActionType.TREND,  # トレンド確認（流行を見てから行動）
-        ActionType.UNFOLLOW,  # フォロー解除（関係の変化を表現）
-        ActionType.MUTE,  # ミュート（嫌いなユーザーを無視）
+        # --- タイムライン ---
+        ActionType.REFRESH,              # タイムラインを更新（RecSysから新着投稿を取得）★最重要
+        ActionType.TREND,                # トレンドを確認
+        ActionType.SEARCH_POSTS,         # キーワードで投稿を検索
+        ActionType.SEARCH_USER,          # ユーザーを検索
+        # --- 投稿操作 ---
+        ActionType.CREATE_POST,          # 新規投稿
+        ActionType.REPOST,               # リポスト（拡散）
+        ActionType.QUOTE_POST,           # 引用リポスト
+        ActionType.LIKE_POST,            # 投稿にいいね
+        ActionType.UNLIKE_POST,          # 投稿のいいね取消
+        ActionType.DISLIKE_POST,         # 投稿によくないね
+        ActionType.UNDO_DISLIKE_POST,    # よくないね取消
+        # --- コメント操作 ---
+        ActionType.CREATE_COMMENT,       # コメント（リプライ）
+        ActionType.LIKE_COMMENT,         # コメントにいいね
+        ActionType.UNLIKE_COMMENT,       # コメントのいいね取消
+        ActionType.DISLIKE_COMMENT,      # コメントによくないね
+        ActionType.UNDO_DISLIKE_COMMENT, # コメントよくないね取消
+        # --- ユーザー関係 ---
+        ActionType.FOLLOW,               # フォロー
+        ActionType.UNFOLLOW,             # フォロー解除
+        ActionType.MUTE,                 # ミュート
+        ActionType.UNMUTE,               # ミュート解除
+        # --- 無行動 ---
+        ActionType.DO_NOTHING,           # 何もしない（必須：過剰発言を防ぐ）
     ]
 
     # ---------------------------------------------------------
