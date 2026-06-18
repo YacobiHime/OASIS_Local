@@ -13,8 +13,10 @@
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import re
 import sys
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union
@@ -26,7 +28,7 @@ from camel.prompts import TextPrompt
 from camel.toolkits import FunctionTool
 from camel.types import OpenAIBackendRole
 
-from oasis.social_agent.agent_action import SocialAction
+from oasis.social_agent.agent_action import SocialAction, _camel_to_snake
 from oasis.social_agent.agent_environment import SocialEnvironment
 from oasis.social_platform import Channel
 from oasis.social_platform.config import UserInfo
@@ -55,6 +57,121 @@ ALL_SOCIAL_ACTIONS = [action.value for action in ActionType]
 # camel の astep はツール不呼び出しで即終了するため、perform_action_by_llm
 # 側で再催促メッセージを送りリトライする。実時間との兼ね合いで2回まで。
 MAX_ACTION_RETRY = 2
+
+
+def _looks_like_error(result: Any) -> bool:
+    r"""ツール実行結果がエラー（引数ミス・未知関数・例外等）かを判定する。
+
+    Function Calling の失敗をログで拾うため、result がエラーメッセージ
+    や異常値のときだけ真を返す。正常完了（success:True の dict 等）は偽。
+    """
+    if result is None:
+        return False
+    if isinstance(result, str):
+        return any(
+            k in result
+            for k in ("Error", "error", "Traceback", "Exception", "例外", "失敗")
+        )
+    if isinstance(result, dict):
+        return result.get("success") is False
+    return False
+
+
+# ---- 二段階テキストパース方式の設定 -----------------------------------
+# Function Calling を廃止し、LLM には「アクション名 ID」の1行テキストを出させて
+# agent 側でパースする。第1段階で行動を選ばせ、本文が必要なアクションだけ
+# 第2段階で本文のみを書かせる。
+MAX_CONTENT_RETRY = 1  # 第2段階（本文生成）のリトライ上限
+
+# 第2段階（本文生成）が必要なアクション
+NEEDS_CONTENT = frozenset({"create_post", "create_comment", "quote_post"})
+
+# target（第1段階の第2トークン）を int として解釈するアクション。
+# create_comment / quote_post は第1引数(post_id)が int。
+ID_ACTIONS = frozenset({
+    "like_post", "unlike_post", "dislike_post", "undo_dislike_post",
+    "like_comment", "unlike_comment", "dislike_comment",
+    "undo_dislike_comment",
+    "repost", "follow", "unfollow", "mute", "unmute",
+    "create_comment", "quote_post",
+})
+
+# target を query 文字列として行末まで取るアクション
+QUERY_ACTIONS = frozenset({"search_posts", "search_user"})
+
+# target を取らないアクション
+NO_ARG_ACTIONS = frozenset({"do_nothing", "trend"})
+
+# よくある誤呼び出し・省略名を正規アクション名へ
+ACTION_ALIASES = {
+    "like": "like_post",
+    "unlike": "unlike_post",
+    "dislike": "dislike_post",
+    "post": "create_post",
+    "tweet": "create_post",
+    "comment": "create_comment",
+    "reply": "create_comment",
+    "comment_on_post": "create_comment",
+    "quote": "quote_post",
+    "reshare": "repost",
+    "retweet": "repost",
+    "follow_user": "follow",
+    "mute_user": "mute",
+}
+
+
+# ---- LLM 同時実行数の制限（VRAM 枯渇対策）---------------------------
+# env.step は asyncio.gather で全エージェントを同時並列実行する。26B など
+# 大規模モデルを多数エージェントで並列推論すると VRAM に載りきらず、Ollama が
+# 「全レイヤーをGPUに載せる（num_gpu=99）」を要求して 500/OOM になる。
+# これを防ぐため astep（LLM リクエスト）の同時実行数をセマフォで絞る。
+# llm_concurrency は sumika.py / config.json から configure_llm_concurrency()
+# で設定する。未設定（0）なら制限なし（従来挙動）。セマフォは asyncio イベント
+# ループ上で生成する必要があるため、生成は初回の astep 呼び出し時まで遅延させる。
+_LLM_CONCURRENCY = 0
+_LLM_SEMAPHORE: Optional[asyncio.Semaphore] = None
+
+
+def configure_llm_concurrency(limit: int) -> None:
+    r"""LLM への同時リクエスト数を制限するセマフォを（再）設定する。
+
+    0 以下なら制限なし（従来挙動）。1 以上ならその数まで同時実行を許可する。
+    値を変えるたびに既存セマフォを破棄し、次回 astep 時に新しい値で再生成する。
+    """
+    global _LLM_CONCURRENCY, _LLM_SEMAPHORE
+    _LLM_CONCURRENCY = max(0, int(limit))
+    _LLM_SEMAPHORE = None
+
+
+def _get_llm_semaphore() -> Optional[asyncio.Semaphore]:
+    r"""設定されていれば、イベントループ上でセマフォを遅延生成して返す。"""
+    global _LLM_SEMAPHORE
+    if _LLM_CONCURRENCY > 0 and _LLM_SEMAPHORE is None:
+        _LLM_SEMAPHORE = asyncio.Semaphore(_LLM_CONCURRENCY)
+    return _LLM_SEMAPHORE
+
+
+# ---- チャットテンプレート制御トークンの除去（パーサ堅牢化）-----------
+# Ollama が適用するチャットテンプレートとモデルの学習テンプレートが不一致の
+# 場合、<|channel>thought / <channel|> / end_of_turn / </thought> のような
+# 制御トークンがモデル出力に生で混入する。これらを行から除去し、純粋な
+# アクション行/本文だけを取り出すことで、テンプレート不一致のモデルでも
+# アクションを救済する。
+_TEMPLATE_TAG_RE = re.compile(
+    r'<\|?/?(?:channel|thought|start_of_turn|end_of_turn|im_start|im_end|'
+    r'system|user|model|assistant)\|?>',
+    re.IGNORECASE,
+)
+# タグ除去後にこれらの予約語だけが残る行は無視する（アクション/本文ではない）
+_TEMPLATE_NOISE_WORDS = frozenset({
+    "thought", "end_of_turn", "start_of_turn", "channel",
+    "system", "user", "model", "assistant",
+})
+
+
+def _strip_template_tokens(line: str) -> str:
+    r"""チャットテンプレートの制御トークンを行から除去する。"""
+    return _TEMPLATE_TAG_RE.sub("", line).strip()
 
 
 class SocialAgent(ChatAgent):
@@ -87,32 +204,28 @@ class SocialAgent(ChatAgent):
             content=system_message_content,
         )
 
+        # 第1段階パーサ用: 許可アクション名のホワイトリスト。
+        # Function Calling は廃止してテキストパース方式にしたため、tools は
+        # 構築しない。available_actions はパーサが許可するアクション名として使う。
         if not available_actions:
-            agent_log.info("No available actions defined, using all actions.")
-            self.action_tools = self.env.action.get_openai_function_list()
+            self.available_action_names = set(a.value for a in ActionType)
         else:
-            all_tools = self.env.action.get_openai_function_list()
-            all_possible_actions = [tool.func.__name__ for tool in all_tools]
-
-            for action in available_actions:
-                action_name = action.value if isinstance(
-                    action, ActionType) else action
-                if action_name not in all_possible_actions:
+            self.available_action_names = set(
+                a.value if isinstance(a, ActionType) else a
+                for a in available_actions
+            )
+            for name in sorted(self.available_action_names):
+                if not hasattr(self.env.action, name):
                     agent_log.warning(
-                        f"Action {action_name} is not supported. Supported "
-                        f"actions are: {', '.join(all_possible_actions)}")
-            self.action_tools = [
-                tool for tool in all_tools if tool.func.__name__ in [
-                    a.value if isinstance(a, ActionType) else a
-                    for a in available_actions
-                ]
-            ]
-        all_tools = (tools or []) + (self.action_tools or [])
+                        f"Action '{name}' has no SocialAction method; "
+                        f"it will be rejected by the parser.")
+        # astep でテキスト応答を取るため、ChatAgent には tools を渡さない
+        # （外部 tools は互換のため残せるが本プロジェクトでは未使用）。
         super().__init__(
             system_message=system_message,
             model=model,
             scheduling_strategy='random_model',
-            tools=all_tools,
+            tools=tools or [],
         )
         self.max_iteration = max_iteration
         self.interview_record = interview_record
@@ -127,77 +240,304 @@ class SocialAgent(ChatAgent):
             "\n"
             "What do you think Helen should do?")
 
+    async def _astep_throttled(self, msg):
+        r"""LLM 同時実行数をセマフォで制限しつつ astep を呼ぶ（VRAM 枯渇対策）。
+
+        llm_concurrency が未設定（0）ならセマフォ無しでそのまま astep する。
+        """
+        sem = _get_llm_semaphore()
+        if sem is None:
+            return await self.astep(msg)
+        async with sem:
+            return await self.astep(msg)
+
     async def perform_action_by_llm(self):
-        env_prompt = await self.env.to_text_prompt()
-        # A3/B2: タイムラインの既存投稿へのリアクションを優先し、フォローで
-        # タイムラインを広げるよう誘導する。投稿(create_post)ばかりになるのを防ぐ。
-        first_msg = BaseMessage.make_user_message(
-            role_name="User",
-            content=(
-                f"上記は今のあなたのSNS環境（タイムライン含む）です。"
-                f"キャラクター設定に沿って、必ず何か1つ以上の行動をとってください。\n"
-                f"【優先行動】タイムラインに投稿が表示されている場合、まずその中から"
-                f"1件を選んでリアクション（like_post / create_comment / repost / "
-                f"quote_post）を行ってください。自分の発信(create_post)よりも、"
-                f"他者へのリアクションを優先してください。\n"
-                f"とれる行動の例:\n"
-                f"- いいねを押す(like_post): 共感・面白いと感じた投稿に\n"
-                f"- リポストする(repost) / 引用する(quote_post): 広げたい投稿を\n"
-                f"- コメントする(create_comment): 議論したい・返信したい投稿に\n"
-                f"- 投稿する(create_post): 思ったこと、タイムラインの話題への反応など\n"
-                f"- フォローする(follow): 興味を持ったユーザーをフォローして"
-                f"タイムラインを広げる / ミュートする(mute): 不快なユーザーに\n"
-                f"注意:\n"
-                f"- タイムラインの取得は既に済んでいるので、改めて取得する必要はありません。\n"
-                f"- 「何もしない(do_nothing)」は本当に迷ったときだけにし、"
-                f"毎回何もしないのは避けてください。\n"
-                f"- 投稿やいいねばかりでなく、状況に応じて多様な行動を選んでください。\n"
-                f"現在の環境: {env_prompt}"))
-        # A1: ツールを呼ばなかった（テキストのみ返した）場合の再催促メッセージ。
-        # camel の astep はツール不呼び出しで即終了するため、リトライはここで行う。
-        retry_msg = BaseMessage.make_user_message(
-            role_name="User",
-            content=(
-                f"あなたはまだ行動を起こしていません（ツール呼び出しがありませんでした）。\n"
-                f"タイムラインの中から1件選び、ただちに以下のいずれかを"
-                f"1つ呼び出してください: like_post / create_comment / repost / "
-                f"quote_post / follow / create_post\n"
-                f"テキストだけで答えず、必ずツール呼び出しを生成すること。"
-                f"現在の環境: {env_prompt}"))
+        r"""二段階テキストパース方式でアクションを1つ実行する。
+
+        第1段階: astep で「アクション名 ID」の1行テキストを取得してパース。
+        第2段階: 本文が必要なアクション（create_post/create_comment/quote_post）
+                 のみ、astep で本文のみを取得。
+        最後に SocialAction の対応メソッドを直接呼ぶ（Function Casting 不使用）。
+        Function Calling は廃止しており、astep は常にテキスト応答を返す。
+        """
         try:
+            env_prompt = await self.env.to_text_prompt()
             agent_log.info(
                 f"Agent {self.social_agent_id} observing environment: "
-                f"{env_prompt}")
-            response = await self.astep(first_msg)
-            self._log_tool_calls(response)
-            # A1: ツールを呼ばなかった場合は再催促メッセージでリトライ
-            retries = 0
-            while (
-                not response.info.get('tool_calls')
-                and retries < MAX_ACTION_RETRY
-            ):
-                retries += 1
+                f"{env_prompt}"
+            )
+
+            # --- 第1段階: 行動選択 ---
+            parsed = None
+            for attempt in range(MAX_ACTION_RETRY + 1):
+                msg = (
+                    self._stage1_message(env_prompt)
+                    if attempt == 0
+                    else self._stage1_retry_message(env_prompt)
+                )
+                response = await self._astep_throttled(msg)
+                raw = self._response_text(response)
+                parsed = self._parse_stage1(raw)
+                self._log_text_out("STAGE1", raw, parsed)
+                if parsed is not None:
+                    break
                 agent_log.info(
-                    f"Agent {self.social_agent_id} made no tool call; "
-                    f"retrying ({retries}/{MAX_ACTION_RETRY})")
-                response = await self.astep(retry_msg)
-                self._log_tool_calls(response)
-            return response
+                    f"Agent {self.social_agent_id} STAGE1 parse failed; "
+                    f"retrying ({attempt + 1}/{MAX_ACTION_RETRY})"
+                )
+
+            if parsed is None:
+                agent_log.warning(
+                    f"Agent {self.social_agent_id} STAGE1 exhausted; "
+                    f"falling back to do_nothing"
+                )
+                action, target = ("do_nothing", None)
+            else:
+                action, target = parsed
+
+            # --- 第2段階: 本文生成（本文が必要なアクションのみ）---
+            content = None
+            if action in NEEDS_CONTENT:
+                for attempt in range(MAX_CONTENT_RETRY + 1):
+                    msg = (
+                        self._stage2_message(action, target)
+                        if attempt == 0
+                        else self._stage2_retry_message(action, target)
+                    )
+                    response = await self._astep_throttled(msg)
+                    raw = self._response_text(response)
+                    content = self._extract_content(raw)
+                    self._log_text_out("STAGE2", raw, content)
+                    if content:
+                        break
+                if not content:
+                    agent_log.warning(
+                        f"Agent {self.social_agent_id} STAGE2 empty content; "
+                        f"falling back to do_nothing"
+                    )
+                    action, target = ("do_nothing", None)
+
+            # --- 実行 ---
+            return await self._dispatch(action, target, content)
         except Exception as e:
             agent_log.error(f"Agent {self.social_agent_id} error: {e}")
             return e
 
-    def _log_tool_calls(self, response):
-        r"""response の tool_calls をログ出力する（初回・リトライ共通処理）。"""
-        for tool_call in response.info.get('tool_calls', []):
-            action_name = tool_call.tool_name
-            args = tool_call.args
-            agent_log.info(f"Agent {self.social_agent_id} performed "
-                           f"action: {action_name} with args: {args}")
-            if action_name not in ALL_SOCIAL_ACTIONS:
+    # ---- 二段階テキストパース方式のヘルパ群 ----
+
+    @staticmethod
+    def _response_text(response):
+        r"""ChatAgentResponse からテキスト本文を安全に取り出す。"""
+        try:
+            if response is not None and response.msg is not None:
+                return response.msg.content or ""
+        except Exception:
+            pass
+        return ""
+
+    def _stage1_message(self, env_prompt):
+        return BaseMessage.make_user_message(
+            role_name="User",
+            content=(
+                "上記は今のあなたのSNS環境（タイムライン含む）です。"
+                "キャラクター設定に沿って、とる行動を1つだけ選び、"
+                "下記の形式で1行で出力してください（本文はまだ書かない）。\n"
+                "形式: <アクション名> <対象ID または query>\n"
+                "例:\n"
+                "  like_post 6        （投稿6にいいね）\n"
+                "  create_comment 6   （投稿6にコメント。本文は次で聞きます）\n"
+                "  create_post        （新規投稿。本文は次で聞きます）\n"
+                "  quote_post 12      （投稿12を引用。本文は次で聞きます）\n"
+                "  repost 12          （投稿12をリポスト）\n"
+                "  follow 5           （ユーザー5をフォロー）\n"
+                "  search_posts キーワード\n"
+                "  do_nothing\n"
+                "【優先行動】タイムラインに投稿があれば、まずその中から1件を選んで"
+                "リアクション（like_post / create_comment / repost / quote_post）を。"
+                "自分の発信(create_post)より他者へのリアクションを優先。\n"
+                "注意: 1行だけ。余計な説明・記号・マークダウンは書かない。"
+                "do_nothing は本当に迷ったときだけ。\n"
+                f"現在の環境: {env_prompt}"
+            ),
+        )
+
+    def _stage1_retry_message(self, env_prompt):
+        return BaseMessage.make_user_message(
+            role_name="User",
+            content=(
+                "形式が読み取れませんでした。行動を1つ選び、"
+                "「<アクション名> <ID>」の1行だけを出力してください。"
+                "（例: like_post 6 / create_comment 6 / create_post / follow 5）\n"
+                "余計な説明は書かないこと。\n"
+                f"現在の環境: {env_prompt}"
+            ),
+        )
+
+    def _stage2_message(self, action, target):
+        what = {
+            "create_post": "新しい投稿",
+            "create_comment": f"投稿{target}へのコメント",
+            "quote_post": f"投稿{target}の引用",
+        }.get(action, "本文")
+        return BaseMessage.make_user_message(
+            role_name="User",
+            content=(
+                f"選んだ行動: {action}（{what}）。\n"
+                f"その{what}の本文を、{self.user_info.name}の口調・性格で書いてください。\n"
+                "140字以内。アクション名・ID・記号・マークダウンは一切書かず、"
+                "本文のテキストだけを出力すること。"
+            ),
+        )
+
+    def _stage2_retry_message(self, action, target):
+        return BaseMessage.make_user_message(
+            role_name="User",
+            content=(
+                "本文が空でした。投稿内容のテキストだけを書いてください。"
+                "（アクション名や記号は書かない）"
+            ),
+        )
+
+    def _parse_stage1(self, text):
+        r"""第1段階の出力「アクション名 [ID|query]」をパースする。
+
+        戻り値: (action_name, target) または None（パース失敗・無効アクション）。
+        target は ID アクションなら int、query アクションなら str、それ以外は None。
+        """
+        if not text:
+            return None
+        # 先頭の意味ある1行を取得。チャットテンプレートの制御トークン
+        # (<|channel>thought / <channel|> / end_of_turn 等) が混入するモデル
+        # にも耐えるため、各行情況トークンを除去してから評価する。
+        line = None
+        for cand in text.splitlines():
+            s = _strip_template_tokens(cand)
+            s = s.strip().strip("`").strip(">*#-").strip()
+            if not s or s.lower() in _TEMPLATE_NOISE_WORDS:
+                continue
+            # "action: like_post 6" のようなラベル付きも許容
+            if s.lower().startswith("action:"):
+                s = s.split(":", 1)[1].strip()
+            if s:
+                line = s
+                break
+        if not line:
+            return None
+
+        parts = line.split(None, 1)
+        action_raw = parts[0]
+        rest = parts[1].strip() if len(parts) > 1 else ""
+
+        # アクション名の正規化: プレフィックス剥離 → snake_case（大小保持）→
+        # 小文字化 → エイリアス。先に lower すると camelCase 情報が消えるので注意。
+        action = action_raw
+        for sep in (":", "."):
+            if sep in action:
+                action = action.rsplit(sep, 1)[-1]
+        action = _camel_to_snake(action).lower()
+        action = ACTION_ALIASES.get(action, action)
+
+        if action not in self.available_action_names:
+            return None
+
+        # target 解決
+        if action in QUERY_ACTIONS:
+            return (action, rest or None)
+        if action in ID_ACTIONS:
+            if not rest:
+                return None  # ID 必須だが省略
+            try:
+                return (action, int(rest))
+            except (ValueError, TypeError):
+                return None  # 数値化失敗
+        # NO_ARG_ACTIONS / create_post は target 不要
+        return (action, None)
+
+    @staticmethod
+    def _extract_content(text):
+        r"""第2段階の出力から本文を抽出する。先頭の意味ある行を返す。"""
+        if not text:
+            return None
+        labels = ("content", "text", "message", "body", "本文", "投稿")
+        for cand in text.splitlines():
+            s = _strip_template_tokens(cand)
+            s = s.strip().strip("`").strip(">*#-").strip()
+            if not s or s.lower() in _TEMPLATE_NOISE_WORDS:
+                continue
+            if ":" in s:
+                head = s.split(":", 1)[0].strip().lower()
+                if head in labels:
+                    s = s.split(":", 1)[1].strip()
+            if s:
+                return s
+        return None
+
+    async def _dispatch(self, action, target, content):
+        r"""パース結果を SocialAction の対応メソッドへ渡して実行する。"""
+        method = getattr(self.env.action, action, None)
+        if method is None:
+            agent_log.warning(
+                f"Agent {self.social_agent_id} [LLM-OUT] EXEC_NO_METHOD "
+                f"action={action}"
+            )
+            return {"success": False, "error": f"unknown action: {action}"}
+        try:
+            if action == "create_post":
+                result = await method(content)
+            elif action in ("create_comment", "quote_post"):
+                result = await method(target, content)
+            elif action in QUERY_ACTIONS:
+                result = await method(target if target is not None else "")
+            elif action in NO_ARG_ACTIONS:
+                result = await method()
+            else:
+                # ID 型単引数アクション（like_post/follow/...）
+                result = await method(target)
+            self._log_text_out("EXEC", None, (action, target, result))
+            return result
+        except Exception as e:
+            agent_log.warning(
+                f"Agent {self.social_agent_id} [LLM-OUT] EXEC_ERROR "
+                f"action={action} target={target} content={content!r} "
+                f"error={e!r}"
+            )
+            return {"success": False, "error": str(e)}
+
+    def _log_text_out(self, stage, raw, parsed):
+        r"""二段階方式の各ステップの生テキストとパース結果をログ出力する。
+
+        ``grep '[LLM-OUT]'`` で一覧可能。STAGE1/STAGE2/EXEC の各ステップと
+        エラー（PARSE_FAIL / EMPTY / EXEC_ERROR）を記録し、LLM の失敗例を追跡できる。
+        """
+        aid = self.social_agent_id
+        if raw:
+            agent_log.info(f"Agent {aid} [LLM-OUT] {stage} raw: {raw!r}")
+        if stage == "STAGE1":
+            if parsed is None:
+                agent_log.warning(f"Agent {aid} [LLM-OUT] {stage} PARSE_FAIL")
+            else:
                 agent_log.info(
-                    f"Agent {self.social_agent_id} get the result: "
-                    f"{tool_call.result}")
+                    f"Agent {aid} [LLM-OUT] {stage} parsed: {parsed}"
+                )
+        elif stage == "STAGE2":
+            if not parsed:
+                agent_log.warning(f"Agent {aid} [LLM-OUT] {stage} EMPTY")
+            else:
+                agent_log.info(
+                    f"Agent {aid} [LLM-OUT] {stage} content: {parsed!r}"
+                )
+        elif stage == "EXEC":
+            action, target, result = parsed
+            if _looks_like_error(result):
+                agent_log.warning(
+                    f"Agent {aid} [LLM-OUT] EXEC_ERROR action={action} "
+                    f"target={target} result={result!r}"
+                )
+            else:
+                agent_log.info(
+                    f"Agent {aid} [LLM-OUT] EXEC action={action} "
+                    f"target={target}"
+                )
 
     async def perform_test(self):
         """

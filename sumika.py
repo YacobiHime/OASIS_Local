@@ -12,6 +12,7 @@ from camel.models import ModelManager
 
 import oasis
 from oasis import ActionType, LLMAction, ManualAction, AgentGraph, SocialAgent, UserInfo
+from oasis.social_agent.agent import configure_llm_concurrency
 from oasis.social_platform.platform import Platform
 from oasis.clock.clock import Clock
 
@@ -324,6 +325,7 @@ async def main():
                     "recsys_type": CONFIG.get("recsys_type", "twitter"),
                     "clock_k": CONFIG.get("clock_k", 20),
                     "time_step_minutes": TIME_STEP_MINUTES,
+                    "llm_concurrency": CONFIG.get("llm_concurrency", 0),
                 },
             )
             print(f"📊 W&B初期化完了: {wandb.run.name}")
@@ -347,16 +349,20 @@ async def main():
         max_retries=2,  # 失敗時2回リトライ
     )
 
-    # ollama_model = ModelFactory.create(
-    # model_platform=ModelPlatformType.OPENAI,
-    # model_type="gemma4:e2b",
-    # url="http://localhost:11434/v1",
-    # api_key="ollama",
-    # model_config_dict={
-    #     "temperature": 0.2,
-    #     "presence_penalty": 1.2  # 過剰思考を抑制するための設定値。1.0 から 1.5 の間に設定。それでも長いなら最大値の2.0に設定。
-    #     },
-    # )
+    # ---------------------------------------------------------
+    # LLM 同時実行数の制限（VRAM 枯渇対策）
+    # ---------------------------------------------------------
+    # env.step が asyncio.gather で全エージェントを同時並列実行するため、
+    # 大規模モデルを18並列で推論すると 16GB VRAM に載りきらず Ollama が
+    # num_gpu=99 を要求して 500/OOM になる。agent.py 側で astep をセマフォで
+    # 囲み、同時に LLM へリクエストするエージェント数を制限する。
+    # config.json の "llm_concurrency"（例: 3）で調整。0 なら制限なし。
+    llm_concurrency = CONFIG.get("llm_concurrency", 0)
+    configure_llm_concurrency(llm_concurrency)
+    if llm_concurrency > 0:
+        print(f"🔒 LLM 同時実行数を {llm_concurrency} に制限します（VRAM 枯渇対策）")
+    else:
+        print("⚠️ LLM 同時実行制限なし（llm_concurrency=0）")
 
     # ---------------------------------------------------------
     # 2. アクション設定（論文記載の21アクション完全対応）
@@ -408,7 +414,9 @@ async def main():
             name=profile["name"],
             description=profile["bio"],
             # ★ここ重要！JSONから読み込んだ詳細プロフィール(other_info)を渡す
-            profile={"other_info": other_info},
+            # tone_examples も渡す（user.py の to_system_message が口調例を反映）。
+            profile={"other_info": other_info,
+                     "tone_examples": profile.get("tone_examples")},
             recsys_type="twitter",
         )
         agent = SocialAgent(
@@ -417,9 +425,10 @@ async def main():
             agent_graph=agent_graph,
             model=ollama_model,
             available_actions=available_actions,
-            # A2: 1ターンに複数アクション（ツール連鎖）を許可。テキストのみ
-            # ターンの改善は perform_action_by_llm 側の空振りリトライが担う。
-            max_iteration=2,
+            # 二段階テキストパース方式（Function Calling 廃止）。1ターン1アクション。
+            # max_iteration は実質未使用（perform_action_by_llm 内で第1/第2段階の
+            # リトライを独立管理）。互換のため残す。
+            max_iteration=1,
         )
 
         agent_graph.add_agent(agent)

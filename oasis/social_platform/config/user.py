@@ -79,7 +79,8 @@ class UserInfo:
 - 自己リプ禁止（{self.name}自身の投稿・コメントには反応しない）
 - 投稿・コメントは140字以内
 
-必ずツールを呼び出してアクションを実行すること。テキストのみの回答は無効。"""
+行動は「アクション名 対象ID」の1行で指定すること（例: like_post 6 / create_comment 6 / create_post / follow 5 / do_nothing）。
+本文（投稿やコメントの中身）は、必要な場合に後で別途書く。"""
         return system_content
 
     def to_reddit_system_message(self) -> str:

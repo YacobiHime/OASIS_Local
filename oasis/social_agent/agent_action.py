@@ -11,12 +11,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
+import functools
+import re
 from typing import Any
 
 from camel.toolkits import FunctionTool
+from camel.toolkits.function_tool import get_openai_tool_schema
 
 from oasis.social_platform.channel import Channel
 from oasis.social_platform.typing import ActionType
+
+
+def _camel_to_snake(name: str) -> str:
+    r"""camelCase を snake_case に変換する。
+
+    例: postId → post_id, parentCommentId → parent_comment_id,
+    numLikes → num_likes。snake_case の入力はそのまま通す。
+    """
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
+def _normalize_tool_args(method):
+    r"""LLM が camelCase（postId 等）で渡した引数を snake_case に吸収するラッパー。
+
+    ローカルLLM（Ollama 等）は Function Calling で JS 流の camelCase を吐く
+    ことがあり、OASIS の実メソッド（post_id 等）と不一致になると
+    ``unexpected keyword argument 'postId'`` でツール実行が失敗する。
+
+    本ラッパーは実行時の ``**kwargs`` のキーを snake_case に正規化してから
+    元メソッドに渡す。スキーマは元メソッドから生成した snake_case 版を
+    明示指定するため、LLM には常に正しい引数名が提示され、かつ実行時の
+    camelCase 誤りも吸収される（二重の安全網）。スキーマ生成側の
+    ``functools.wraps`` 追跡有無に依存しない堅牢な実装。
+    """
+
+    original_schema = get_openai_tool_schema(method)
+
+    @functools.wraps(method)
+    async def wrapper(*args, **kwargs):
+        normalized = {_camel_to_snake(k): v for k, v in kwargs.items()}
+        return await method(*args, **normalized)
+
+    return FunctionTool(wrapper, openai_tool_schema=original_schema)
 
 
 class SocialAction:
@@ -27,7 +64,7 @@ class SocialAction:
 
     def get_openai_function_list(self) -> list[FunctionTool]:
         return [
-            FunctionTool(func)
+            _normalize_tool_args(func)
             for func in [
                 self.create_post,
                 self.like_post,
