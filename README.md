@@ -7,12 +7,12 @@
 
 ## 環境構成
 
-* **OS**: Windows (PowerShell) / Linux / macOS
-* **Python**: 3.10 または 3.11
-* **パッケージ管理**: pip (Python標準)
-* **LLMバックエンド**: Ollama
-* **モデル**: `config.json` で指定（デフォルト: `joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b`）
-* ※ 設定は `config.json` で一元管理されています。環境に合わせて変更してください。
+- **OS**: Windows (PowerShell) / Linux / macOS
+- **Python**: 3.10 または 3.11
+- **パッケージ管理**: pip (Python標準)
+- **LLMバックエンド**: Ollama
+- **モデル**: `config.json` で指定（デフォルト: `joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b`）
+- ※ 設定は `config.json` で一元管理されています。環境に合わせて変更してください。
 
 ## 設定ファイルの準備
 
@@ -78,32 +78,51 @@ pip install wandb
 
 ## ファイル構成
 
-* **実行プログラム**
-* `sim.py`: **Twitter (X) シミュレーション用**の主実行ファイル。
-* 設定ファイル（JSON）からエージェントを生成し、自律行動（投稿・返信・いいね・拡散など）を行います。
-* `--profiles` でプロファイルフォルダを、`--turns` でターン数を指定可能です。
+- **実行プログラム**
 
-* **ツール**
-* `check.py`: シミュレーション結果（データベース）の中身を確認・保存するプログラム。
-* タイムラインを階層状に表示します。
-* LLMを使用して「何が起きたか」の要約報告書を自動生成します。
-* 実行結果を `result_data/` フォルダに自動保存します。
-* **差分更新機能**: 2回目以降の実行では、新しいデータのみが追加されます（全件コピーではなく）。
+- `sim.py`: **Twitter (X) シミュレーション用**の主実行ファイル。
 
-* **Blueskyデータ収集・ペルソナ生成ツール**（実データを使ったシミュレーション用）
-* `collect_bluesky.py`: BlueskyのJetstreamから日本語ユーザーの投稿・プロフィールを収集し、`raw_users.json` に保存します。
-* `make_gemini_prompt`: `raw_users.json` を読み込み、GeminiチャットにコピペするだけでOASIS用ペルソナ・seed投稿を生成できるプロンプトを `gemini_prompt.txt` に出力します。
-* `generate_profiles.py`: Claude/Gemini API を使って `raw_users.json` からペルソナ・seed投稿を自動生成します（APIキーが必要）。
+- 設定ファイル（JSON）からエージェントを生成し、自律行動（投稿・返信・いいね・拡散など）を行います。
 
-* **データ・設定**
-* `config.json`: **シミュレーションの設定ファイル**（Ollama URL、モデル名、DBパス、推薦システム、イベント駆動設定などを指定）。Git 管理対象外。
-* `profiles/`: エージェントのペルソナ情報を格納するフォルダ。本番用は `sim.json`（20人の架空ペルソナ）。フォルダ内の全 `.json` が読み込まれます。
-* `seeds/`: シミュレーション開始時の初期投稿を格納するフォルダ。本番用は `seed_sim.json`。フォルダ内の全 `.json` が読み込まれます。
-* `raw_users.json`: `collect_bluesky.py` で収集したBlueskyユーザーの生データ。Git 管理対象外。
-* `gemini_prompt.txt`: `make_gemini_prompt` で生成したGeminiへの入力プロンプト。Git 管理対象外。
-* `ollama_twitter.db`: シミュレーション結果が保存されるデータベース（`config.json` の `db_path`）。
-* `sumika_tracker.db`: シミュレーションの追跡データ（ターン統計、行動ログ）（`config.json` の `tracker_db_path`）。
-* `result_data/`: `check.py` で出力された記録ファイルの保存先。
+- `--profiles` でプロファイルフォルダを、`--turns` でターン数を指定可能です。
+
+- **ツール**
+
+- `check.py`: シミュレーション結果（データベース）の中身を確認・保存するプログラム。
+
+- タイムラインを階層状に表示します。
+
+- LLMを使用して「何が起きたか」の要約報告書を自動生成します。
+
+- 実行結果を `result_data/` フォルダに自動保存します。
+
+- **差分更新機能**: 2回目以降の実行では、新しいデータのみが追加されます（全件コピーではなく）。
+
+- **Blueskyデータ収集・ペルソナ生成ツール**（実データを使ったシミュレーション用）
+
+- `collect_bluesky.py`: BlueskyのJetstreamから日本語ユーザーの投稿・プロフィールを収集し、`raw_users.json` に保存します。
+
+- `make_gemini_prompt`: `raw_users.json` を読み込み、GeminiチャットにコピペするだけでOASIS用ペルソナ・seed投稿を生成できるプロンプトを `gemini_prompt.txt` に出力します。
+
+- `generate_profiles.py`: Claude/Gemini API を使って `raw_users.json` からペルソナ・seed投稿を自動生成します（APIキーが必要）。
+
+- **データ・設定**
+
+- `config.json`: **シミュレーションの設定ファイル**（Ollama URL、モデル名、DBパス、推薦システム、イベント駆動設定などを指定）。Git 管理対象外。
+
+- `profiles/`: エージェントのペルソナ情報を格納するフォルダ。本番用は `sim.json`（20人の架空ペルソナ）。フォルダ内の全 `.json` が読み込まれます。
+
+- `seeds/`: シミュレーション開始時の初期投稿を格納するフォルダ。本番用は `seed_sim.json`。フォルダ内の全 `.json` が読み込まれます。
+
+- `raw_users.json`: `collect_bluesky.py` で収集したBlueskyユーザーの生データ。Git 管理対象外。
+
+- `gemini_prompt.txt`: `make_gemini_prompt` で生成したGeminiへの入力プロンプト。Git 管理対象外。
+
+- `ollama_twitter.db`: シミュレーション結果が保存されるデータベース（`config.json` の `db_path`）。
+
+- `sumika_tracker.db`: シミュレーションの追跡データ（ターン統計、行動ログ）（`config.json` の `tracker_db_path`）。
+
+- `result_data/`: `check.py` で出力された記録ファイルの保存先。
 
 ## ペルソナ・seed の構成
 
@@ -111,15 +130,15 @@ pip install wandb
 
 `profiles/` フォルダ内の **すべての `.json`** を読み込んでマージします（複数ファイル可）。各ペルソナのスキーマ:
 
-| フィールド | 必須 | 説明 |
-|---|:---:|---|
-| `id` | ✓ | ペルソナの識別子（整数・連番推奨）。`initial_follows` や seed の `author_id` がこの id を参照します |
-| `name` | ✓ | 表示名 |
-| `bio` | ✓ | 性格・立場・行動指針。システムプロンプトに組み込まれ、発言内容を決定づけます |
-| `tone_examples` | ✓ | 口調・セリフ例（改行区切りで複数）。発言の文体を固定します |
-| `initial_follows` | — | 初期フォロー先の `id` 配列。対立相手を含めると議論が盛り上がります |
-| `active_threshold` | — | 後述のタイムエンジン（24要素）。省略時は毎ターン必ず行動します |
-| `other_info` | — | 任意の補足情報 |
+| フィールド         | 必須 | 説明                                                                                                |
+| ------------------ | :--: | --------------------------------------------------------------------------------------------------- |
+| `id`               |  ✓   | ペルソナの識別子（整数・連番推奨）。`initial_follows` や seed の `author_id` がこの id を参照します |
+| `name`             |  ✓   | 表示名                                                                                              |
+| `bio`              |  ✓   | 性格・立場・行動指針。システムプロンプトに組み込まれ、発言内容を決定づけます                        |
+| `tone_examples`    |  ✓   | 口調・セリフ例（改行区切りで複数）。発言の文体を固定します                                          |
+| `initial_follows`  |  —   | 初期フォロー先の `id` 配列。対立相手を含めると議論が盛り上がります                                  |
+| `active_threshold` |  —   | 後述のタイムエンジン（24要素）。省略時は毎ターン必ず行動します                                      |
+| `other_info`       |  —   | 任意の補足情報                                                                                      |
 
 > **ヒント**: `bio` に「同調・過剰肯定・励ましは禁止」のような行動制約を書き、`tone_examples` に個性的な口調例を並べると、キャラクターが立ち自然な発言になりやすくなります。
 
@@ -127,38 +146,38 @@ pip install wandb
 
 `seeds/` フォルダ内の **すべての `.json`** を読み込んでマージします。各投稿のスキーマ:
 
-| フィールド | 必須 | 説明 |
-|---|:---:|---|
-| `content` | ✓ | 投稿本文 |
-| `author_id` | ✓ | 投稿者のペルソナ `id`（**存在しない id はエラーになります**） |
-| `num_likes` | — | いいね数（省略時 0） |
-| `num_reposts` | — | リポスト数（省略時 0） |
-| `posted_at` | — | 投稿日時（例: `2026-06-22T10:00:00`） |
+| フィールド    | 必須 | 説明                                                          |
+| ------------- | :--: | ------------------------------------------------------------- |
+| `content`     |  ✓   | 投稿本文                                                      |
+| `author_id`   |  ✓   | 投稿者のペルソナ `id`（**存在しない id はエラーになります**） |
+| `num_likes`   |  —   | いいね数（省略時 0）                                          |
+| `num_reposts` |  —   | リポスト数（省略時 0）                                        |
+| `posted_at`   |  —   | 投稿日時（例: `2026-06-22T10:00:00`）                         |
 
 ### タイムエンジン（時間帯別アクティブ判定）
 
 ペルソナの `active_threshold` は **24要素（0時〜23時）の行動確率（0.0〜1.0）配列** です。
 シミュレーションは全体で1日（24時間）を均等に進み、各ターンの現在時刻 `current_hour` に対応する確率で、各エージェントがそのターン行動するかを抽選します。
 
-* 深夜を低く（0.01〜0.05）、昼〜夕方を高く（0.4〜0.8）設定すると、現実的な活動リズムを再現できます。
-* 朝型・夜型など、ペルソナごとにピーク時間をずらすと生活リズムに差が出ます。
-* 省略時は `[1.0] * 24`（毎ターン必ず行動）になります。
+- 深夜を低く（0.01〜0.05）、昼〜夕方を高く（0.4〜0.8）設定すると、現実的な活動リズムを再現できます。
+- 朝型・夜型など、ペルソナごとにピーク時間をずらすと生活リズムに差が出ます。
+- 省略時は `[1.0] * 24`（毎ターン必ず行動）になります。
 
 ## 設定項目（config.json）
 
 `config.json` の主要項目:
 
-| 項目 | 説明 |
-|---|---|
-| `ollama_url` | Ollama のエンドポイント（環境変数 `OLLAMA_URL` が優先） |
-| `ollama_model_sim` | シミュレーション本体で使うモデル |
-| `ollama_model_check` | `check.py` の要約報告などで使うモデル |
-| `llm_concurrency` | LLM 呼び出しの並列数（`0` で無制限） |
-| `db_path` | 投稿・コメント等を保存するDB |
-| `tracker_db_path` | ターン統計・行動ログを保存する追跡DB |
-| `recsys_type` | 推薦システム（`"twitter"` or `"twhin-bert"`） |
-| `num_steps` | 既定のターン数（実行時の `--turns` が優先されます） |
-| `event_driven` | イベント駆動ニュース注入の設定（下記） |
+| 項目                 | 説明                                                    |
+| -------------------- | ------------------------------------------------------- |
+| `ollama_url`         | Ollama のエンドポイント（環境変数 `OLLAMA_URL` が優先） |
+| `ollama_model_sim`   | シミュレーション本体で使うモデル                        |
+| `ollama_model_check` | `check.py` の要約報告などで使うモデル                   |
+| `llm_concurrency`    | LLM 呼び出しの並列数（`0` で無制限）                    |
+| `db_path`            | 投稿・コメント等を保存するDB                            |
+| `tracker_db_path`    | ターン統計・行動ログを保存する追跡DB                    |
+| `recsys_type`        | 推薦システム（`"twitter"` or `"twhin-bert"`）           |
+| `num_steps`          | 既定のターン数（実行時の `--turns` が優先されます）     |
+| `event_driven`       | イベント駆動ニュース注入の設定（下記）                  |
 
 > **注意**: `config.json` に `profile_path` / `seed_path` という項目がありますが、`sim.py` では**未使用**です。実際の読込先は `--profiles` 引数（デフォルト `profiles/`）と `seeds/` フォルダです。
 
@@ -166,16 +185,16 @@ pip install wandb
 
 `config.json` の `event_driven` ブロックで、SearXNG からニュースを取得し、指定エージェント経由でタイムラインに定期的に注入できます。
 
-| 項目 | 説明 |
-|---|---|
-| `enabled` | イベント駆動の有効/無効 |
-| `baseline_wakeup_rate` | ベースラインのウェイクアップ率 |
-| `inject_interval_steps` | ニュース注入の間隔（ターン数） |
-| `topics` | 取得するニュース話題のリスト |
-| `num_results_per_topic` | 話題あたりの取得件数 |
-| `searxng_url` | SearXNG のエンドポイント |
-| `news_bot_agent_id` | ニュースを投稿するエージェントの `id` |
-| `categories` | SearXNG の検索カテゴリ |
+| 項目                    | 説明                                  |
+| ----------------------- | ------------------------------------- |
+| `enabled`               | イベント駆動の有効/無効               |
+| `baseline_wakeup_rate`  | ベースラインのウェイクアップ率        |
+| `inject_interval_steps` | ニュース注入の間隔（ターン数）        |
+| `topics`                | 取得するニュース話題のリスト          |
+| `num_results_per_topic` | 話題あたりの取得件数                  |
+| `searxng_url`           | SearXNG のエンドポイント              |
+| `news_bot_agent_id`     | ニュースを投稿するエージェントの `id` |
+| `categories`            | SearXNG の検索カテゴリ                |
 
 ## 実行方法
 
@@ -212,6 +231,7 @@ python sim.py --turns 10 --resume
 ```
 
 **主な機能:**
+
 - **タイムアウト保護**: LLM応答が遅い場合、5分でタイムアウトして次の処理に進みます
 - **メモリ圧縮**: エージェントの記憶が一定量を超えると自動的に要約・圧縮されます（並列処理で高速化）
 - **タイムエンジン**: ペルソナの `active_threshold` に基づき、時間帯別に行動有無を抽選します
@@ -229,12 +249,15 @@ python sim.py --turns 10 --resume
 python check.py
 ```
 
-* **機能**:
-* タイムラインの表示（返信や引用再投稿も階層状に表示）
-* エージェントの行動記録の表示
-* **AIによる状況要約**: 「誰と誰が仲が良いか」「どんな話題が出たか」などをLLMが分析して解説します。
+- **機能**:
 
-* `result_data/` フォルダ内に「日時付きの記録ファイル（例: `2026-01-25_12-00-00.txt`）」が自動保存されます。
+- タイムラインの表示（返信や引用再投稿も階層状に表示）
+
+- エージェントの行動記録の表示
+
+- **AIによる状況要約**: 「誰と誰が仲が良いか」「どんな話題が出たか」などをLLMが分析して解説します。
+
+- `result_data/` フォルダ内に「日時付きの記録ファイル（例: `2026-01-25_12-00-00.txt`）」が自動保存されます。
 
 ## Bluesky実データを使ったシミュレーション
 
@@ -258,12 +281,12 @@ Jetstreamから日本語投稿をリアルタイムにサンプリングし、30
 
 主なオプション:
 
-| オプション | 説明 | デフォルト |
-|---|---|---|
-| `--count` | 収集するユーザー数 | 30 |
-| `--posts` | 1ユーザーあたりの最大取得投稿数 | 20 |
-| `--output` | 出力ファイルパス | `raw_users.json` |
-| `--timeout` | Jetstream収集のタイムアウト秒数 | 180 |
+| オプション  | 説明                            | デフォルト       |
+| ----------- | ------------------------------- | ---------------- |
+| `--count`   | 収集するユーザー数              | 30               |
+| `--posts`   | 1ユーザーあたりの最大取得投稿数 | 20               |
+| `--output`  | 出力ファイルパス                | `raw_users.json` |
+| `--timeout` | Jetstream収集のタイムアウト秒数 | 180              |
 
 ### 3. ペルソナ・seed投稿を生成する
 
@@ -280,8 +303,8 @@ python make_gemini_prompt --input raw_users.json --limit 30
 
 Geminiから返ってきた出力を以下のように保存します:
 
-* **【出力1】** → `profiles/bluesky_profiles.json`
-* **【出力2】** → `seeds/bluesky_seeds.json`
+- **【出力1】** → `profiles/bluesky_profiles.json`
+- **【出力2】** → `seeds/bluesky_seeds.json`
 
 **B. APIで自動生成（Claude/Gemini の APIキーが必要）**
 
@@ -306,6 +329,7 @@ python sim.py --turns 50
 ```
 
 **配置例:**
+
 ```
 profiles/
   └── bluesky_profiles.json  ← エージェント属性
@@ -315,24 +339,24 @@ seeds/
 
 > **注意**: フォルダ内の `.json` はすべて読み込まれるため、複数のデータセットを混在させないようにしてください（不要なファイルは `.bak` 等にリネームすると読み込まれません）。
 
----
+______________________________________________________________________
 
 ## バージョン管理について
 
 以下のファイル・フォルダは `.gitignore` により管理対象から除外されています。
 
-* `config.json`（ローカルの IP アドレス等を含む）
-* `raw_users.json` / `gemini_prompt.txt`（生成物）
-* `result_data/`（実験記録）
-* `*.db` / `*.sqlite3`（データベースファイル）
-* `*.log` / `log/`（記録ファイル）
-* `.venv/`（仮想環境）
-* `wandb/`（実験追跡）
-* `*.bak` / `*.backup`（バックアップファイル）
+- `config.json`（ローカルの IP アドレス等を含む）
+- `raw_users.json` / `gemini_prompt.txt`（生成物）
+- `result_data/`（実験記録）
+- `*.db` / `*.sqlite3`（データベースファイル）
+- `*.log` / `log/`（記録ファイル）
+- `.venv/`（仮想環境）
+- `wandb/`（実験追跡）
+- `*.bak` / `*.backup`（バックアップファイル）
 
 `profiles/` と `seeds/` は Git 管理対象です（`sim.json` / `seed_sim.json` 等をバージョン管理できます）。
 
 ## 権利 / 出典
 
-* OASIS: [https://github.com/camel-ai/oasis](https://github.com/camel-ai/oasis)
-* CAMEL-AI: [https://www.camel-ai.org/](https://www.camel-ai.org/)
+- OASIS: [https://github.com/camel-ai/oasis](https://github.com/camel-ai/oasis)
+- CAMEL-AI: [https://www.camel-ai.org/](https://www.camel-ai.org/)

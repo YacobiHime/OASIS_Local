@@ -1,22 +1,34 @@
-import asyncio
-import os
-import json
+# =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
+# Licensed under the Apache License, Version 2.0 (the “License”);
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an “AS IS” BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
 import argparse
+import asyncio
+import json
+import os
 import random
 import sqlite3
 from datetime import datetime
 
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
-from camel.models import ModelManager
 
 import oasis
-from oasis import ActionType, LLMAction, ManualAction, AgentGraph, SocialAgent, UserInfo
+import wandb
+from oasis import (ActionType, AgentGraph, LLMAction, ManualAction,
+                   SocialAgent, UserInfo)
+from oasis.clock.clock import Clock
 from oasis.social_agent.agent import configure_llm_concurrency
 from oasis.social_platform.platform import Platform
-from oasis.clock.clock import Clock
-
-import wandb
 
 # ---------------------------------------------------------
 # 設定ファイルの読み込み（環境変数 OLLAMA_URL 優先）
@@ -171,9 +183,9 @@ async def compress_agent_memory(
     システムメッセージは保持し、それ以外を要約1件に置き換える。
     """
     # システムメッセージ以外のレコードを取得
+    from camel.memories import MemoryRecord
     from camel.messages import BaseMessage
     from camel.types import OpenAIBackendRole
-    from camel.memories import MemoryRecord
 
     records = agent.memory.retrieve()
     non_system = [
@@ -447,7 +459,7 @@ async def main():
         if os.path.exists(tracker_db_path):
             os.remove(tracker_db_path)
     else:
-        print(f"♻️  resumeモード: 既存のDBを引き継ぎます")
+        print("♻️  resumeモード: 既存のDBを引き継ぎます")
 
     # ★④ Clock を明示的に作成し、Platform に渡す。
     # k は「実時間1秒に対してシミュレーション内時刻を何倍速で進めるか」の係数。
@@ -777,14 +789,14 @@ async def main():
                 print(
                     f"  ⚠️ ターン{turn_num}: ステップ実行中にエラーが発生しました: {e}"
                 )
-                print(f"  → 次の処理に進みます...")
+                print("  → 次の処理に進みます...")
                 elapsed_sec = (datetime.now() - turn_started_at).total_seconds()
 
             elapsed_history.append(elapsed_sec)
 
             # メモリ圧縮チェック（MEMORY_COMPRESS_INTERVALターンごと）
             if turn_num % MEMORY_COMPRESS_INTERVAL == 0:
-                print(f"  🧠 メモリ圧縮チェック中...")
+                print("  🧠 メモリ圧縮チェック中...")
                 for agent_id, agent in env.agent_graph.get_agents():
                     try:
                         await compress_agent_memory(
