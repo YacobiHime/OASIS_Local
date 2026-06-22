@@ -1,3 +1,6 @@
+> **📌 OASIS_Local の利用方法はルートの `README.md` を参照してください。**
+> この `docs/` 以下は上流 OASIS ライブラリの API リファレンス・クックブックで、[https://docs.oasis.camel-ai.org/](https://docs.oasis.camel-ai.org/) で公開されている内容です（`sim.py` 実装とは別物です）。
+
 # Mintlify Starter Kit
 
 ### Development

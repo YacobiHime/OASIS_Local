@@ -1,3 +1,7 @@
+> **📌 本リポジトリは OASIS_Local（`sim.py` + Ollama によるローカルシミュレーションのフォーク）です。**
+> セットアップ・実行・ペルソナ設定については、ルートの **README.md** を参照してください。
+> 以下は上流 OASIS（[camel-ai/oasis](https://github.com/camel-ai/oasis)）本体へのコントリビュートガイドです。
+
 🏝️ **Welcome to OASIS!** 🏝️
 
 Thank you for your interest in contributing to the OASIS project! 🎉 We're excited to have your support. As an open-source initiative in a rapidly evolving and open-ended field, we wholeheartedly welcome contributions of all kinds. Whether you want to introduce new features, enhance the infrastructure, improve documentation, asking issues, add more examples, implement state-of-the-art research ideas, or fix bugs, we appreciate your enthusiasm and efforts. 🙌  You are welcome to join our [discord](https://discord.com/channels/1115015097560076329/1315102455624892469) or [wechat group](assets/wechatgroup.png) for more efficient communication. 💬
